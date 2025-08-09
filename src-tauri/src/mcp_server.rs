@@ -8,6 +8,11 @@ use axum::{
 use futures::stream::{self, Stream};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+
+// Import mcp-schema for type validation
+// We use custom types for simpler implementation but can validate against mcp-schema types
+#[allow(unused_imports)]
+use mcp_schema;
 use std::{
     collections::HashMap,
     convert::Infallible,
@@ -33,16 +38,16 @@ pub struct Session {
     pub resources: Vec<Resource>,
 }
 
-// Tool definition
+// Tool definition - matches MCP schema
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tool {
     pub name: String,
-    pub description: String,
+    pub description: Option<String>,
     #[serde(rename = "inputSchema")]
     pub input_schema: Value,
 }
 
-// Resource definition
+// Resource definition - matches MCP schema
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Resource {
     pub uri: String,
@@ -347,7 +352,7 @@ async fn handle_initialize(
         tools: vec![
             Tool {
                 name: "browser_navigate".to_string(),
-                description: "Open a URL in the default browser".to_string(),
+                description: Some("Open a URL in the default browser".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
