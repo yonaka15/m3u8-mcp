@@ -1,4 +1,5 @@
 use axum::{
+    body::Bytes,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response, sse::{Event, Sse}},
@@ -11,8 +12,6 @@ use serde_json::{json, Value};
 
 // Import mcp-schema for type validation
 // We use custom types for simpler implementation but can validate against mcp-schema types
-#[allow(unused_imports)]
-use mcp_schema;
 use std::{
     collections::HashMap,
     convert::Infallible,
@@ -119,13 +118,15 @@ pub fn create_mcp_router(state: Arc<McpServerState>) -> Router {
 
 
 // Handle POST /mcp
+#[axum::debug_handler]
 async fn handle_post(
     State(state): State<Arc<McpServerState>>,
-    _headers: HeaderMap,
-    body: String,
-) -> impl IntoResponse {
+    body: Bytes,
+) -> Response {
+    // Convert body to string
+    let body_str = String::from_utf8_lossy(&body);
     // Parse JSON body
-    let body: Value = match serde_json::from_str(&body) {
+    let body_value: Value = match serde_json::from_str(&body_str) {
         Ok(v) => v,
         Err(_) => {
             return (
@@ -141,10 +142,10 @@ async fn handle_post(
     let session_id = None;
 
     // Handle single or batch requests
-    if body.is_array() {
-        handle_batch_request(state, session_id, body.as_array().unwrap().clone()).await
+    if body_value.is_array() {
+        handle_batch_request(state, session_id, body_value.as_array().unwrap().clone()).await
     } else {
-        let request: JsonRpcRequest = match serde_json::from_value(body) {
+        let request: JsonRpcRequest = match serde_json::from_value(body_value) {
             Ok(req) => req,
             Err(_) => {
                 return (
@@ -187,22 +188,7 @@ async fn handle_single_request(
                 created_at: SystemTime::now(),
                 last_activity: SystemTime::now(),
                 last_event_id: 0,
-                tools: vec![
-                    Tool {
-                        name: "browser_navigate".to_string(),
-                        description: Some("Open a URL in the default browser".to_string()),
-                        input_schema: json!({
-                            "type": "object",
-                            "properties": {
-                                "url": {
-                                    "type": "string",
-                                    "description": "The URL to open in the browser"
-                                }
-                            },
-                            "required": ["url"]
-                        }),
-                    },
-                ],
+                tools: vec![],
                 resources: vec![],
             };
             sessions.insert(session_id.clone(), session);
@@ -213,7 +199,7 @@ async fn handle_single_request(
     let request_id = request.id.clone();
     let response = match method {
         "initialize" => {
-            let (new_session_id, response) = handle_initialize(state.clone(), request).await;
+            let (_new_session_id, response) = handle_initialize(state.clone(), request).await;
             // Update session_id if it changed
             response
         },
@@ -325,17 +311,194 @@ async fn handle_initialize(
         last_event_id: 0,
         tools: vec![
             Tool {
+                name: "browser_open".to_string(),
+                description: Some("Open a new browser instance".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "headless": {
+                            "type": "boolean",
+                            "description": "Run in headless mode (no visible window). Default: true",
+                            "default": true
+                        }
+                    }
+                }),
+            },
+            Tool {
                 name: "browser_navigate".to_string(),
-                description: Some("Open a URL in the default browser".to_string()),
+                description: Some("Navigate to a URL in the browser (requires browser_open first)".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
                         "url": {
                             "type": "string",
-                            "description": "The URL to open in the browser"
+                            "description": "The URL to navigate to"
                         }
                     },
                     "required": ["url"]
+                }),
+            },
+            Tool {
+                name: "browser_click".to_string(),
+                description: Some("Click an element on the page".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector for the element to click"
+                        }
+                    },
+                    "required": ["selector"]
+                }),
+            },
+            Tool {
+                name: "browser_type".to_string(),
+                description: Some("Type text into an input field".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector for the input field"
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "Text to type"
+                        }
+                    },
+                    "required": ["selector", "text"]
+                }),
+            },
+            Tool {
+                name: "browser_screenshot".to_string(),
+                description: Some("Take a screenshot of the current page".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "full_page": {
+                            "type": "boolean",
+                            "description": "Whether to capture the full page",
+                            "default": false
+                        }
+                    }
+                }),
+            },
+            Tool {
+                name: "browser_evaluate".to_string(),
+                description: Some("Execute JavaScript in the browser".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "script": {
+                            "type": "string",
+                            "description": "JavaScript code to execute"
+                        }
+                    },
+                    "required": ["script"]
+                }),
+            },
+            Tool {
+                name: "browser_wait_for".to_string(),
+                description: Some("Wait for an element to appear".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "selector": {
+                            "type": "string",
+                            "description": "CSS selector to wait for"
+                        },
+                        "timeout": {
+                            "type": "number",
+                            "description": "Timeout in milliseconds",
+                            "default": 30000
+                        }
+                    },
+                    "required": ["selector"]
+                }),
+            },
+            Tool {
+                name: "browser_get_content".to_string(),
+                description: Some("Get the HTML content of the current page".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            Tool {
+                name: "browser_go_back".to_string(),
+                description: Some("Navigate back in browser history".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            Tool {
+                name: "browser_go_forward".to_string(),
+                description: Some("Navigate forward in browser history".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            Tool {
+                name: "browser_reload".to_string(),
+                description: Some("Reload the current page".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            Tool {
+                name: "browser_close".to_string(),
+                description: Some("Close the browser".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            Tool {
+                name: "browser_snapshot".to_string(),
+                description: Some("Get a snapshot of the current page state".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            Tool {
+                name: "browser_tab_list".to_string(),
+                description: Some("List all open browser tabs".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            Tool {
+                name: "browser_tab_switch".to_string(),
+                description: Some("Switch to a different browser tab".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "index": {
+                            "type": "number",
+                            "description": "Tab index to switch to"
+                        }
+                    },
+                    "required": ["index"]
+                }),
+            },
+            Tool {
+                name: "browser_tab_close".to_string(),
+                description: Some("Close a specific browser tab".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "index": {
+                            "type": "number",
+                            "description": "Tab index to close"
+                        }
+                    },
+                    "required": ["index"]
                 }),
             },
         ],
@@ -441,6 +604,23 @@ async fn handle_tools_call(
     let arguments = params.get("arguments").unwrap_or(&empty_args);
     
     let result = match tool_name {
+        "browser_open" => {
+            let headless = arguments.get("headless").and_then(|v| v.as_bool()).unwrap_or(true);
+            let result = crate::cdp_browser::handle_browser_open(headless).await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let message = if success {
+                result.get("message").and_then(|v| v.as_str()).unwrap_or("Browser opened successfully")
+            } else {
+                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to open browser")
+            };
+            
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": message
+                }]
+            })
+        }
         "browser_navigate" => {
             let url = arguments.get("url").and_then(|v| v.as_str()).unwrap_or("");
             if url.is_empty() {
@@ -451,30 +631,405 @@ async fn handle_tools_call(
                     }]
                 })
             } else {
-                // Simple browser open using OS command
-                let browser_result = crate::simple_browser::open_browser(url);
-                let success = browser_result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-                let message = browser_result.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error").to_string();
-                
-                let text = if success {
-                    format!("✅ {}", message)
+                let result = crate::cdp_browser::handle_browser_navigate(url).await;
+                let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                let message = if success {
+                    result.get("message").and_then(|v| v.as_str()).unwrap_or("Navigated successfully")
                 } else {
-                    format!("❌ {}", message)
+                    result.get("error").and_then(|v| v.as_str()).unwrap_or("Navigation failed")
                 };
                 
                 json!({
                     "content": [{
                         "type": "text",
-                        "text": text
+                        "text": message
                     }]
                 })
             }
+        }
+        "browser_click" => {
+            let selector = arguments.get("selector").and_then(|v| v.as_str()).unwrap_or("");
+            if selector.is_empty() {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Error: Selector is required"
+                    }]
+                })
+            } else {
+                let result = crate::cdp_browser::handle_browser_click(selector).await;
+                let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                let message = if success {
+                    result.get("message").and_then(|v| v.as_str()).unwrap_or("Clicked successfully")
+                } else {
+                    result.get("error").and_then(|v| v.as_str()).unwrap_or("Click failed")
+                };
+                
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": message
+                    }]
+                })
+            }
+        }
+        "browser_type" => {
+            let selector = arguments.get("selector").and_then(|v| v.as_str()).unwrap_or("");
+            let text = arguments.get("text").and_then(|v| v.as_str()).unwrap_or("");
+            if selector.is_empty() || text.is_empty() {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Error: Both selector and text are required"
+                    }]
+                })
+            } else {
+                let result = crate::cdp_browser::handle_browser_type(selector, text).await;
+                let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                let message = if success {
+                    result.get("message").and_then(|v| v.as_str()).unwrap_or("Typed successfully")
+                } else {
+                    result.get("error").and_then(|v| v.as_str()).unwrap_or("Type failed")
+                };
+                
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": message
+                    }]
+                })
+            }
+        }
+        "browser_screenshot" => {
+            let full_page = arguments.get("full_page").and_then(|v| v.as_bool()).unwrap_or(false);
+            let result = crate::cdp_browser::handle_browser_screenshot(full_page).await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            
+            if success {
+                if let Some(screenshot) = result.get("screenshot").and_then(|v| v.as_str()) {
+                    // Extract base64 data from data URL
+                    let base64_data = if screenshot.starts_with("data:image/png;base64,") {
+                        &screenshot[22..] // Remove "data:image/png;base64," prefix
+                    } else {
+                        screenshot
+                    };
+                    
+                    json!({
+                        "content": [{
+                            "type": "image",
+                            "data": base64_data,
+                            "mimeType": "image/png"
+                        }]
+                    })
+                } else {
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": "Screenshot captured but data not available"
+                        }]
+                    })
+                }
+            } else {
+                let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Screenshot failed");
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": error
+                    }]
+                })
+            }
+        }
+        "browser_evaluate" => {
+            let script = arguments.get("script").and_then(|v| v.as_str()).unwrap_or("");
+            if script.is_empty() {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Error: Script is required"
+                    }]
+                })
+            } else {
+                let result = crate::cdp_browser::handle_browser_evaluate(script).await;
+                let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                
+                if success {
+                    let value = result.get("result")
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "undefined".to_string());
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Result: {}", value)
+                        }]
+                    })
+                } else {
+                    let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Evaluation failed");
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": error
+                        }]
+                    })
+                }
+            }
+        }
+        "browser_wait_for" => {
+            let selector = arguments.get("selector").and_then(|v| v.as_str()).unwrap_or("");
+            let timeout = arguments.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30000);
+            if selector.is_empty() {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Error: Selector is required"
+                    }]
+                })
+            } else {
+                let result = crate::cdp_browser::handle_browser_wait_for(selector, timeout).await;
+                let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+                let message = if success {
+                    result.get("message").and_then(|v| v.as_str()).unwrap_or("Element found")
+                } else {
+                    result.get("error").and_then(|v| v.as_str()).unwrap_or("Element not found")
+                };
+                
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": message
+                    }]
+                })
+            }
+        }
+        "browser_get_content" => {
+            let result = crate::cdp_browser::handle_browser_get_content().await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            
+            if success {
+                let content = result.get("content").and_then(|v| v.as_str()).unwrap_or("No content available");
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": content
+                    }]
+                })
+            } else {
+                let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to get content");
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": error
+                    }]
+                })
+            }
+        }
+        "browser_go_back" => {
+            let result = crate::cdp_browser::handle_browser_go_back().await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let message = if success {
+                result.get("message").and_then(|v| v.as_str()).unwrap_or("Navigated back")
+            } else {
+                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to go back")
+            };
+            
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": message
+                }]
+            })
+        }
+        "browser_go_forward" => {
+            let result = crate::cdp_browser::handle_browser_go_forward().await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let message = if success {
+                result.get("message").and_then(|v| v.as_str()).unwrap_or("Navigated forward")
+            } else {
+                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to go forward")
+            };
+            
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": message
+                }]
+            })
+        }
+        "browser_reload" => {
+            let result = crate::cdp_browser::handle_browser_reload().await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let message = if success {
+                result.get("message").and_then(|v| v.as_str()).unwrap_or("Page reloaded")
+            } else {
+                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to reload")
+            };
+            
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": message
+                }]
+            })
+        }
+        "browser_close" => {
+            let result = crate::cdp_browser::handle_browser_close().await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let message = if success {
+                result.get("message").and_then(|v| v.as_str()).unwrap_or("Browser closed")
+            } else {
+                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to close browser")
+            };
+            
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": message
+                }]
+            })
+        }
+        "browser_snapshot" => {
+            let result = crate::cdp_browser::handle_browser_snapshot().await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            
+            if success {
+                if let Some(snapshot) = result.get("snapshot") {
+                    let formatted = format!(
+                        "### Page Snapshot\n\n**URL**: {}\n**Title**: {}\n\n**Tabs**:\n{}\n\n**Recent Console Messages**:\n{}",
+                        snapshot.get("url").and_then(|v| v.as_str()).unwrap_or("N/A"),
+                        snapshot.get("title").and_then(|v| v.as_str()).unwrap_or("N/A"),
+                        snapshot.get("tabs").and_then(|v| v.as_array())
+                            .map(|tabs| tabs.iter()
+                                .map(|tab| format!("- [{}] {} - {} {}",
+                                    tab.get("index").and_then(|v| v.as_u64()).unwrap_or(0),
+                                    tab.get("title").and_then(|v| v.as_str()).unwrap_or(""),
+                                    tab.get("url").and_then(|v| v.as_str()).unwrap_or(""),
+                                    if tab.get("current").and_then(|v| v.as_bool()).unwrap_or(false) { "(current)" } else { "" }
+                                ))
+                                .collect::<Vec<_>>()
+                                .join("\n"))
+                            .unwrap_or_else(|| "None".to_string()),
+                        snapshot.get("console_messages").and_then(|v| v.as_array())
+                            .map(|msgs| if msgs.is_empty() {
+                                "None".to_string()
+                            } else {
+                                msgs.iter()
+                                    .map(|msg| format!("- [{}] {}",
+                                        msg.get("level").and_then(|v| v.as_str()).unwrap_or(""),
+                                        msg.get("text").and_then(|v| v.as_str()).unwrap_or("")
+                                    ))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            })
+                            .unwrap_or_else(|| "None".to_string())
+                    );
+                    
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": formatted
+                        }]
+                    })
+                } else {
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": "Snapshot captured but no data available"
+                        }]
+                    })
+                }
+            } else {
+                let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Snapshot failed");
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": error
+                    }]
+                })
+            }
+        }
+        "browser_tab_list" => {
+            let result = crate::cdp_browser::handle_browser_tab_list().await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            
+            if success {
+                if let Some(tabs) = result.get("tabs").and_then(|v| v.as_array()) {
+                    let formatted = if tabs.is_empty() {
+                        "No open tabs".to_string()
+                    } else {
+                        let tab_list = tabs.iter()
+                            .map(|tab| format!("[{}] {} - {} {}",
+                                tab.get("index").and_then(|v| v.as_u64()).unwrap_or(0),
+                                tab.get("title").and_then(|v| v.as_str()).unwrap_or(""),
+                                tab.get("url").and_then(|v| v.as_str()).unwrap_or(""),
+                                if tab.get("current").and_then(|v| v.as_bool()).unwrap_or(false) { "(current)" } else { "" }
+                            ))
+                            .collect::<Vec<_>>()
+                            .join("\n");
+                        format!("Open tabs:\n{}", tab_list)
+                    };
+                    
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": formatted
+                        }]
+                    })
+                } else {
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": "No tabs information available"
+                        }]
+                    })
+                }
+            } else {
+                let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to list tabs");
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": error
+                    }]
+                })
+            }
+        }
+        "browser_tab_switch" => {
+            let index = arguments.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            let result = crate::cdp_browser::handle_browser_tab_switch(index).await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let message = if success {
+                result.get("message").and_then(|v| v.as_str()).unwrap_or("Tab switched")
+            } else {
+                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to switch tab")
+            };
+            
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": message
+                }]
+            })
+        }
+        "browser_tab_close" => {
+            let index = arguments.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+            let result = crate::cdp_browser::handle_browser_tab_close(index).await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let message = if success {
+                result.get("message").and_then(|v| v.as_str()).unwrap_or("Tab closed")
+            } else {
+                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to close tab")
+            };
+            
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": message
+                }]
+            })
         }
         _ => {
             json!({
                 "content": [{
                     "type": "text",
-                    "text": format!("Tool '{}' is not yet implemented in MVP", tool_name)
+                    "text": format!("Tool '{}' is not yet implemented", tool_name)
                 }]
             })
         }

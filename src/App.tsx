@@ -114,7 +114,7 @@ function App() {
 
   return (
     <main className="container">
-      <h1 className="text-3xl font-bold text-blue-600">MCP Server Control</h1>
+      <h1 className="text-3xl font-bold text-blue-600">CDP-MCP Server Control</h1>
 
       <div className="mcp-server-section" style={{ margin: "2rem 0", padding: "1rem", border: "1px solid #ccc", borderRadius: "8px" }}>
         {mcpServerRunning && currentPort && (

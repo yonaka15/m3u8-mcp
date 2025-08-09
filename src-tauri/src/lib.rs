@@ -1,5 +1,6 @@
 mod mcp_server;
-mod simple_browser;
+mod cdp_browser;
+mod config;
 
 use std::sync::Arc;
 use tauri::State;
@@ -179,6 +180,27 @@ async fn check_port_availability(port: u16) -> Result<bool, String> {
     }
 }
 
+#[tauri::command]
+async fn get_browser_status() -> Result<serde_json::Value, String> {
+    use serde_json::json;
+    
+    let manager = crate::cdp_browser::BROWSER_MANAGER.read().await;
+    let session_data = manager.export_session();
+    
+    Ok(json!({
+        "connected": session_data.get("browser_connected").and_then(|v| v.as_bool()).unwrap_or(false),
+        "tabs": session_data.get("tabs").cloned().unwrap_or(json!([])),
+        "console_messages": manager.get_console_messages(20)
+    }))
+}
+
+#[tauri::command]
+async fn clear_browser_console() -> Result<String, String> {
+    let mut manager = crate::cdp_browser::BROWSER_MANAGER.write().await;
+    manager.clear_console();
+    Ok("Console cleared".to_string())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Initialize MCP server state
@@ -196,7 +218,9 @@ pub fn run() {
             start_mcp_server,
             stop_mcp_server,
             get_mcp_server_status,
-            check_port_availability
+            check_port_availability,
+            get_browser_status,
+            clear_browser_console
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

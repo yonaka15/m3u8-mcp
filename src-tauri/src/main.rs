@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    broser_automation_lib::run()
+    cdp_mcp_lib::run()
 }
