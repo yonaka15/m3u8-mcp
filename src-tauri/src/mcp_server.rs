@@ -522,17 +522,31 @@ fn is_valid_origin(origin: &str) -> bool {
 }
 
 // Start MCP server
-pub async fn start_mcp_server(state: Arc<McpServerState>) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn start_mcp_server(state: Arc<McpServerState>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let router = create_mcp_router(state.clone());
     
     let addr = format!("127.0.0.1:{}", state.port);
-    let listener = tokio::net::TcpListener::bind(&addr).await?;
     
-    println!("MCP Server running on http://{}", addr);
+    // Try to bind to the port, this will fail if port is already in use
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(listener) => {
+            println!("MCP Server successfully started on http://{}", addr);
+            listener
+        },
+        Err(e) => {
+            eprintln!("Failed to bind to port {}: {}", state.port, e);
+            *state.running.lock().await = false;
+            return Err(Box::new(e));
+        }
+    };
     
     *state.running.lock().await = true;
     
-    axum::serve(listener, router).await?;
+    // This will block until the server is stopped
+    let result = axum::serve(listener, router).await;
     
-    Ok(())
+    // Mark server as stopped when serve() returns
+    *state.running.lock().await = false;
+    
+    result.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
 }
