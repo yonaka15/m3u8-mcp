@@ -5,7 +5,7 @@ import "./App.css";
 function App() {
   const [mcpServerRunning, setMcpServerRunning] = useState(false);
   const [mcpServerMessage, setMcpServerMessage] = useState("");
-  const [port, setPort] = useState<number>(37650);
+  const [portInput, setPortInput] = useState<string>("37650");
   const [currentPort, setCurrentPort] = useState<number | null>(null);
   const [portAvailable, setPortAvailable] = useState<boolean | null>(null);
   const [checkingPort, setCheckingPort] = useState(false);
@@ -13,7 +13,10 @@ function App() {
   // Check MCP server status on mount
   useEffect(() => {
     checkMcpServerStatus();
-    checkPortAvailability(port);
+    const port = parseInt(portInput);
+    if (!isNaN(port)) {
+      checkPortAvailability(port);
+    }
   }, []);
 
   async function checkMcpServerStatus() {
@@ -22,14 +25,21 @@ function App() {
       setMcpServerRunning(status.running);
       setCurrentPort(status.port);
       if (status.port) {
-        setPort(status.port);
+        setPortInput(status.port.toString());
       }
     } catch (error) {
       console.error("Failed to check MCP server status:", error);
     }
   }
 
-  const checkPortAvailability = useCallback(async (portToCheck: number) => {
+  const checkPortAvailability = useCallback(async (portToCheck: number | null) => {
+    // If port is null or NaN, mark as invalid
+    if (portToCheck === null || isNaN(portToCheck)) {
+      setPortAvailable(false);
+      setMcpServerMessage("Please enter a valid port number");
+      return;
+    }
+
     // Don't check if server is running and using this port
     if (mcpServerRunning && currentPort === portToCheck) {
       setPortAvailable(true);
@@ -71,12 +81,17 @@ function App() {
     try {
       if (mcpServerRunning) {
         const message = await invoke<string>("stop_mcp_server");
-        setMcpServerMessage(message);
+        setMcpServerMessage("");  // Clear message instead of showing redundant stop message
         setMcpServerRunning(false);
         setCurrentPort(null);
       } else {
+        const port = parseInt(portInput);
+        if (isNaN(port)) {
+          setMcpServerMessage("Please enter a valid port number");
+          return;
+        }
         const message = await invoke<string>("start_mcp_server", { port });
-        setMcpServerMessage(message);
+        setMcpServerMessage("");  // Clear message since status indicator shows the running state
         setMcpServerRunning(true);
         setCurrentPort(port);
       }
@@ -91,34 +106,39 @@ function App() {
 
       <div className="mcp-server-section" style={{ margin: "2rem 0", padding: "1rem", border: "1px solid #ccc", borderRadius: "8px" }}>
         <div className="row" style={{ gap: "1rem", alignItems: "center", marginBottom: "1rem" }}>
-          <label htmlFor="port-input" style={{ fontWeight: "500" }}>
+          <label htmlFor="port-input" style={{ fontWeight: "500", color: mcpServerRunning ? "#6b7280" : "#000" }}>
             Port:
           </label>
           <input
             id="port-input"
-            type="number"
-            value={port}
+            type="text"
+            value={portInput}
             onChange={(e) => {
-              const newPort = Number(e.target.value);
-              setPort(newPort);
-              // Check all ports including invalid ones to show appropriate messages
+              const value = e.target.value;
+              setPortInput(value);
+              
+              // Parse the port and check availability
+              const newPort = value === "" ? null : parseInt(value);
               checkPortAvailability(newPort);
             }}
             disabled={mcpServerRunning}
-            min="1024"
-            max="65535"
+            placeholder="37650"
             style={{
               padding: "0.5rem",
               borderRadius: "0.25rem",
               border: `1px solid ${
+                mcpServerRunning ? "#9ca3af" :
                 checkingPort ? "#fbbf24" : 
                 portAvailable === false ? "#ef4444" : 
                 portAvailable === true ? "#10b981" : 
                 "#ccc"
               }`,
               width: "100px",
-              backgroundColor: mcpServerRunning ? "#f3f4f6" : "white",
-              cursor: mcpServerRunning ? "not-allowed" : "text"
+              backgroundColor: mcpServerRunning ? "#e5e7eb" : "white",
+              color: mcpServerRunning ? "#6b7280" : "#000",
+              cursor: mcpServerRunning ? "not-allowed" : "text",
+              opacity: mcpServerRunning ? 0.6 : 1,
+              transition: "all 0.2s ease"
             }}
           />
           {!mcpServerRunning && !mcpServerMessage && (
@@ -138,22 +158,22 @@ function App() {
         <div className="row" style={{ gap: "1rem", alignItems: "center" }}>
           <button 
             onClick={toggleMcpServer}
-            disabled={!mcpServerRunning && (portAvailable === false || checkingPort)}
+            disabled={!mcpServerRunning && (portAvailable === false || checkingPort || portInput === "")}
             className={`px-6 py-2 rounded-lg font-medium transition-colors ${
               mcpServerRunning 
                 ? "bg-red-500 hover:bg-red-600 text-white" 
-                : portAvailable === false || checkingPort
+                : portAvailable === false || checkingPort || portInput === ""
                 ? "bg-gray-400 cursor-not-allowed text-gray-200"
                 : "bg-green-500 hover:bg-green-600 text-white"
             }`}
             style={{ 
               backgroundColor: mcpServerRunning ? "#ef4444" : 
-                              (portAvailable === false || checkingPort) ? "#9ca3af" : "#10b981",
+                              (portAvailable === false || checkingPort || portInput === "") ? "#9ca3af" : "#10b981",
               color: "white",
               padding: "0.5rem 1.5rem",
               borderRadius: "0.5rem",
               fontWeight: "500",
-              cursor: (!mcpServerRunning && (portAvailable === false || checkingPort)) ? "not-allowed" : "pointer"
+              cursor: (!mcpServerRunning && (portAvailable === false || checkingPort || portInput === "")) ? "not-allowed" : "pointer"
             }}
           >
             {mcpServerRunning ? "Stop MCP Server" : "Start MCP Server"}
