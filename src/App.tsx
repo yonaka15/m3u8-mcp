@@ -22,7 +22,9 @@ function App() {
 
   async function checkMcpServerStatus() {
     try {
-      const status = await invoke<{ running: boolean; port: number | null }>("get_mcp_server_status");
+      const status = await invoke<{ running: boolean; port: number | null }>(
+        "get_mcp_server_status",
+      );
       setMcpServerRunning(status.running);
       setCurrentPort(status.port);
       if (status.port) {
@@ -33,56 +35,61 @@ function App() {
     }
   }
 
-  const checkPortAvailability = useCallback(async (portToCheck: number | null) => {
-    // If port is null or NaN, mark as invalid
-    if (portToCheck === null || isNaN(portToCheck)) {
-      setPortAvailable(false);
-      setMcpServerMessage("Please enter a valid port number");
-      return;
-    }
+  const checkPortAvailability = useCallback(
+    async (portToCheck: number | null) => {
+      // If port is null or NaN, mark as invalid
+      if (portToCheck === null || isNaN(portToCheck)) {
+        setPortAvailable(false);
+        setMcpServerMessage("Please enter a valid port number");
+        return;
+      }
 
-    // Don't check if server is running and using this port
-    if (mcpServerRunning && currentPort === portToCheck) {
-      setPortAvailable(true);
-      setMcpServerMessage("");
-      return;
-    }
+      // Don't check if server is running and using this port
+      if (mcpServerRunning && currentPort === portToCheck) {
+        setPortAvailable(true);
+        setMcpServerMessage("");
+        return;
+      }
 
-    // Validate port range (port 0 is not allowed)
-    if (portToCheck === 0) {
-      setPortAvailable(false);
-      setMcpServerMessage("Port 0 is not allowed");
-      return;
-    }
-    
-    if (portToCheck < 1024 || portToCheck > 65535) {
-      setPortAvailable(false);
-      setMcpServerMessage("Port must be between 1024 and 65535");
-      return;
-    }
+      // Validate port range (port 0 is not allowed)
+      if (portToCheck === 0) {
+        setPortAvailable(false);
+        setMcpServerMessage("Port 0 is not allowed");
+        return;
+      }
 
-    setCheckingPort(true);
-    setMcpServerMessage(""); // Clear message while checking
-    
-    try {
-      const available = await invoke<boolean>("check_port_availability", { port: portToCheck });
-      setPortAvailable(available);
-      // Don't set message here - let the status indicator show the availability
-      setMcpServerMessage("");
-    } catch (error) {
-      console.error("Failed to check port availability:", error);
-      setPortAvailable(null);
-      setMcpServerMessage("");
-    } finally {
-      setCheckingPort(false);
-    }
-  }, [mcpServerRunning, currentPort]);
+      if (portToCheck < 1024 || portToCheck > 65535) {
+        setPortAvailable(false);
+        setMcpServerMessage("Port must be between 1024 and 65535");
+        return;
+      }
+
+      setCheckingPort(true);
+      setMcpServerMessage(""); // Clear message while checking
+
+      try {
+        const available = await invoke<boolean>("check_port_availability", {
+          port: portToCheck,
+        });
+        setPortAvailable(available);
+        // Don't set message here - let the status indicator show the availability
+        setMcpServerMessage("");
+      } catch (error) {
+        console.error("Failed to check port availability:", error);
+        setPortAvailable(null);
+        setMcpServerMessage("");
+      } finally {
+        setCheckingPort(false);
+      }
+    },
+    [mcpServerRunning, currentPort],
+  );
 
   async function toggleMcpServer() {
     try {
       if (mcpServerRunning) {
         await invoke<string>("stop_mcp_server");
-        setMcpServerMessage("");  // Clear message instead of showing redundant stop message
+        setMcpServerMessage(""); // Clear message instead of showing redundant stop message
         setMcpServerRunning(false);
         setCurrentPort(null);
       } else {
@@ -92,7 +99,7 @@ function App() {
           return;
         }
         await invoke<string>("start_mcp_server", { port });
-        setMcpServerMessage("");  // Clear message since status indicator shows the running state
+        setMcpServerMessage(""); // Clear message since status indicator shows the running state
         setMcpServerRunning(true);
         setCurrentPort(port);
       }
@@ -114,34 +121,55 @@ function App() {
 
   return (
     <main className="container">
-      <h1 className="text-3xl font-bold text-blue-600">CDP-MCP Server Control</h1>
+      <h1 className="text-3xl font-bold text-blue-600">
+        CDP-MCP Server Control
+      </h1>
 
-      <div className="mcp-server-section" style={{ margin: "2rem 0", padding: "1rem", border: "1px solid #ccc", borderRadius: "8px" }}>
+      <div
+        className="mcp-server-section"
+        style={{
+          margin: "2rem 0",
+          padding: "1rem",
+          border: "1px solid #ccc",
+          borderRadius: "8px",
+        }}
+      >
         {mcpServerRunning && currentPort && (
-          <div style={{ 
-            marginBottom: "1.5rem", 
-            padding: "1rem", 
-            backgroundColor: "#f0f9ff", 
-            borderRadius: "0.5rem",
-            border: "1px solid #0284c7"
-          }}>
-            <p style={{ fontWeight: "500", marginBottom: "0.5rem", color: "#0c4a6e" }}>
-              Connect with Claude Desktop:
+          <div
+            style={{
+              marginBottom: "1.5rem",
+              padding: "1rem",
+              backgroundColor: "#f0f9ff",
+              borderRadius: "0.5rem",
+              border: "1px solid #0284c7",
+            }}
+          >
+            <p
+              style={{
+                fontWeight: "500",
+                marginBottom: "0.5rem",
+                color: "#0c4a6e",
+              }}
+            >
+              Connect with Claude Code:
             </p>
             <div style={{ position: "relative" }}>
-              <code style={{ 
-                display: "block", 
-                padding: "0.75rem", 
-                paddingRight: "3.5rem",
-                backgroundColor: "#1e293b", 
-                color: "#94a3b8",
-                borderRadius: "0.25rem",
-                fontSize: "0.875rem",
-                fontFamily: "monospace",
-                whiteSpace: "nowrap",
-                overflowX: "auto"
-              }}>
-                claude mcp add --transport http browser-automation http://localhost:{currentPort}/mcp
+              <code
+                style={{
+                  display: "block",
+                  padding: "0.75rem",
+                  paddingRight: "3.5rem",
+                  backgroundColor: "#1e293b",
+                  color: "#94a3b8",
+                  borderRadius: "0.25rem",
+                  fontSize: "0.875rem",
+                  fontFamily: "monospace",
+                  whiteSpace: "nowrap",
+                  overflowX: "auto",
+                }}
+              >
+                claude mcp add --transport http browser-automation
+                http://localhost:{currentPort}/mcp
               </code>
               <button
                 onClick={copyToClipboard}
@@ -157,7 +185,7 @@ function App() {
                   borderRadius: "0.25rem",
                   fontSize: "0.75rem",
                   cursor: "pointer",
-                  transition: "background-color 0.2s"
+                  transition: "background-color 0.2s",
                 }}
               >
                 {copied ? "✓ Copied" : "Copy"}
@@ -165,8 +193,17 @@ function App() {
             </div>
           </div>
         )}
-        <div className="row" style={{ gap: "1rem", alignItems: "center", marginBottom: "1rem" }}>
-          <label htmlFor="port-input" style={{ fontWeight: "500", color: mcpServerRunning ? "#6b7280" : "#000" }}>
+        <div
+          className="row"
+          style={{ gap: "1rem", alignItems: "center", marginBottom: "1rem" }}
+        >
+          <label
+            htmlFor="port-input"
+            style={{
+              fontWeight: "500",
+              color: mcpServerRunning ? "#6b7280" : "#000",
+            }}
+          >
             Port:
           </label>
           <input
@@ -176,7 +213,7 @@ function App() {
             onChange={(e) => {
               const value = e.target.value;
               setPortInput(value);
-              
+
               // Parse the port and check availability
               const newPort = value === "" ? null : parseInt(value);
               checkPortAvailability(newPort);
@@ -187,63 +224,93 @@ function App() {
               padding: "0.5rem",
               borderRadius: "0.25rem",
               border: `1px solid ${
-                mcpServerRunning ? "#9ca3af" :
-                checkingPort ? "#fbbf24" : 
-                portAvailable === false ? "#ef4444" : 
-                portAvailable === true ? "#10b981" : 
-                "#ccc"
+                mcpServerRunning
+                  ? "#9ca3af"
+                  : checkingPort
+                    ? "#fbbf24"
+                    : portAvailable === false
+                      ? "#ef4444"
+                      : portAvailable === true
+                        ? "#10b981"
+                        : "#ccc"
               }`,
               width: "100px",
               backgroundColor: mcpServerRunning ? "#e5e7eb" : "white",
               color: mcpServerRunning ? "#6b7280" : "#000",
               cursor: mcpServerRunning ? "not-allowed" : "text",
               opacity: mcpServerRunning ? 0.6 : 1,
-              transition: "all 0.2s ease"
+              transition: "all 0.2s ease",
             }}
           />
           {!mcpServerRunning && !mcpServerMessage && (
-            <span style={{ 
-              fontSize: "0.875rem", 
-              color: checkingPort ? "#fbbf24" : 
-                     portAvailable === false ? "#ef4444" : 
-                     portAvailable === true ? "#10b981" : 
-                     "#6b7280"
-            }}>
-              {checkingPort ? "Checking..." : 
-               portAvailable === false ? "❌ In use" : 
-               portAvailable === true ? "✅ Available" : ""}
+            <span
+              style={{
+                fontSize: "0.875rem",
+                color: checkingPort
+                  ? "#fbbf24"
+                  : portAvailable === false
+                    ? "#ef4444"
+                    : portAvailable === true
+                      ? "#10b981"
+                      : "#6b7280",
+              }}
+            >
+              {checkingPort
+                ? "Checking..."
+                : portAvailable === false
+                  ? "❌ In use"
+                  : portAvailable === true
+                    ? "✅ Available"
+                    : ""}
             </span>
           )}
         </div>
         <div className="row" style={{ gap: "1rem", alignItems: "center" }}>
-          <button 
+          <button
             onClick={toggleMcpServer}
-            disabled={!mcpServerRunning && (portAvailable === false || checkingPort || portInput === "")}
+            disabled={
+              !mcpServerRunning &&
+              (portAvailable === false || checkingPort || portInput === "")
+            }
             className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-              mcpServerRunning 
-                ? "bg-red-500 hover:bg-red-600 text-white" 
+              mcpServerRunning
+                ? "bg-red-500 hover:bg-red-600 text-white"
                 : portAvailable === false || checkingPort || portInput === ""
-                ? "bg-gray-400 cursor-not-allowed text-gray-200"
-                : "bg-green-500 hover:bg-green-600 text-white"
+                  ? "bg-gray-400 cursor-not-allowed text-gray-200"
+                  : "bg-green-500 hover:bg-green-600 text-white"
             }`}
-            style={{ 
-              backgroundColor: mcpServerRunning ? "#ef4444" : 
-                              (portAvailable === false || checkingPort || portInput === "") ? "#9ca3af" : "#10b981",
+            style={{
+              backgroundColor: mcpServerRunning
+                ? "#ef4444"
+                : portAvailable === false || checkingPort || portInput === ""
+                  ? "#9ca3af"
+                  : "#10b981",
               color: "white",
               padding: "0.5rem 1.5rem",
               borderRadius: "0.5rem",
               fontWeight: "500",
-              cursor: (!mcpServerRunning && (portAvailable === false || checkingPort || portInput === "")) ? "not-allowed" : "pointer"
+              cursor:
+                !mcpServerRunning &&
+                (portAvailable === false || checkingPort || portInput === "")
+                  ? "not-allowed"
+                  : "pointer",
             }}
           >
             {mcpServerRunning ? "Stop MCP Server" : "Start MCP Server"}
           </button>
-          <span className={`status-indicator ${mcpServerRunning ? "text-green-600" : "text-gray-500"}`}>
-            Status: {mcpServerRunning ? `🟢 Running on port ${currentPort}` : "⭕ Stopped"}
+          <span
+            className={`status-indicator ${mcpServerRunning ? "text-green-600" : "text-gray-500"}`}
+          >
+            Status:{" "}
+            {mcpServerRunning
+              ? `🟢 Running on port ${currentPort}`
+              : "⭕ Stopped"}
           </span>
         </div>
         {mcpServerMessage && (
-          <p className="mt-2 text-sm" style={{ marginTop: "0.5rem" }}>{mcpServerMessage}</p>
+          <p className="mt-2 text-sm" style={{ marginTop: "0.5rem" }}>
+            {mcpServerMessage}
+          </p>
         )}
       </div>
     </main>
