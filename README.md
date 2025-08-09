@@ -2,6 +2,10 @@
 
 Chrome DevTools Protocol MCP Server - A desktop application that provides browser automation capabilities through the Model Context Protocol (MCP), built with Tauri, React, and Rust.
 
+![CDP-MCP Dashboard](./docs/images/cdp-mcp-dashboard.png)
+
+The CDP-MCP dashboard provides an intuitive interface for managing your MCP server. Simply click "Stop MCP Server" or "Start MCP Server" to control the service, and use the provided command to connect with Claude Code.
+
 ## 🚀 Features
 
 - **MCP Server**: Runs a Model Context Protocol server on configurable port (default: 37650)
@@ -317,6 +321,36 @@ Test the MCP server endpoints:
 
 Or manually test with curl commands as shown in the Usage section.
 
+## 🦀 Why Rust?
+
+CDP-MCP leverages Rust's unique advantages for browser automation:
+
+### Performance
+
+- **Native Speed** - Compiled to machine code for maximum performance
+- **Zero-Cost Abstractions** - High-level code without runtime overhead
+- **Efficient Memory Usage** - No garbage collector delays or memory bloat
+
+### Reliability
+
+- **Memory Safety** - Prevents segfaults and memory leaks at compile time
+- **Thread Safety** - Fearless concurrency with Send/Sync traits
+- **Error Handling** - Robust Result types for predictable error recovery
+
+### Integration
+
+- **chromiumoxide** - Native Rust CDP client for direct Chrome control
+- **Tauri v2** - Seamless desktop app integration with minimal resource usage
+- **Async/Await** - Modern async runtime with Tokio for concurrent operations
+
+### Developer Experience
+
+- **Type Safety** - Catch errors at compile time, not runtime
+- **Pattern Matching** - Elegant handling of complex browser states
+- **Cargo Ecosystem** - Rich ecosystem of high-quality libraries
+
+These benefits make CDP-MCP more reliable and performant than JavaScript or Python alternatives, especially for long-running automation tasks.
+
 ## 🚧 Roadmap
 
 - [x] Basic MCP server implementation
@@ -349,7 +383,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [Tauri](https://tauri.app/) - For the amazing desktop framework
 - [MCP Specification](https://spec.modelcontextprotocol.io/) - For the protocol documentation
-- [x-auto-liker](https://github.com/yonaka15/x-auto-liker) - Reference implementation for browser automation
 
 ## 📞 Support
 
@@ -361,4 +394,3 @@ For issues and questions:
 ---
 
 **Note**: This is an MVP (Minimum Viable Product) implementation. Advanced browser automation features are planned for future releases.
-
