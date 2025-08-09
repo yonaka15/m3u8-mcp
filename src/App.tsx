@@ -9,6 +9,7 @@ function App() {
   const [currentPort, setCurrentPort] = useState<number | null>(null);
   const [portAvailable, setPortAvailable] = useState<boolean | null>(null);
   const [checkingPort, setCheckingPort] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Check MCP server status on mount
   useEffect(() => {
@@ -80,7 +81,7 @@ function App() {
   async function toggleMcpServer() {
     try {
       if (mcpServerRunning) {
-        const message = await invoke<string>("stop_mcp_server");
+        await invoke<string>("stop_mcp_server");
         setMcpServerMessage("");  // Clear message instead of showing redundant stop message
         setMcpServerRunning(false);
         setCurrentPort(null);
@@ -90,7 +91,7 @@ function App() {
           setMcpServerMessage("Please enter a valid port number");
           return;
         }
-        const message = await invoke<string>("start_mcp_server", { port });
+        await invoke<string>("start_mcp_server", { port });
         setMcpServerMessage("");  // Clear message since status indicator shows the running state
         setMcpServerRunning(true);
         setCurrentPort(port);
@@ -100,11 +101,70 @@ function App() {
     }
   }
 
+  async function copyToClipboard() {
+    const command = `claude mcp add --transport http browser-automation http://localhost:${currentPort}/mcp`;
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error("Failed to copy to clipboard:", error);
+    }
+  }
+
   return (
     <main className="container">
       <h1 className="text-3xl font-bold text-blue-600">MCP Server Control</h1>
 
       <div className="mcp-server-section" style={{ margin: "2rem 0", padding: "1rem", border: "1px solid #ccc", borderRadius: "8px" }}>
+        {mcpServerRunning && currentPort && (
+          <div style={{ 
+            marginBottom: "1.5rem", 
+            padding: "1rem", 
+            backgroundColor: "#f0f9ff", 
+            borderRadius: "0.5rem",
+            border: "1px solid #0284c7"
+          }}>
+            <p style={{ fontWeight: "500", marginBottom: "0.5rem", color: "#0c4a6e" }}>
+              Connect with Claude Desktop:
+            </p>
+            <div style={{ position: "relative" }}>
+              <code style={{ 
+                display: "block", 
+                padding: "0.75rem", 
+                paddingRight: "3.5rem",
+                backgroundColor: "#1e293b", 
+                color: "#94a3b8",
+                borderRadius: "0.25rem",
+                fontSize: "0.875rem",
+                fontFamily: "monospace",
+                whiteSpace: "nowrap",
+                overflowX: "auto"
+              }}>
+                claude mcp add --transport http browser-automation http://localhost:{currentPort}/mcp
+              </code>
+              <button
+                onClick={copyToClipboard}
+                style={{
+                  position: "absolute",
+                  top: "50%",
+                  right: "0.5rem",
+                  transform: "translateY(-50%)",
+                  padding: "0.25rem 0.5rem",
+                  backgroundColor: copied ? "#10b981" : "#3b82f6",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "0.25rem",
+                  fontSize: "0.75rem",
+                  cursor: "pointer",
+                  transition: "background-color 0.2s"
+                }}
+              >
+                {copied ? "✓ Copied" : "Copy"}
+              </button>
+            </div>
+          </div>
+        )}
         <div className="row" style={{ gap: "1rem", alignItems: "center", marginBottom: "1rem" }}>
           <label htmlFor="port-input" style={{ fontWeight: "500", color: mcpServerRunning ? "#6b7280" : "#000" }}>
             Port:

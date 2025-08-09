@@ -1,6 +1,6 @@
 use axum::{
     extract::State,
-    http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response, sse::{Event, Sse}},
     routing::post,
     Json, Router,
@@ -21,7 +21,7 @@ use std::{
 };
 use tokio::sync::{Mutex, RwLock};
 use tower_http::cors::CorsLayer;
-use uuid::Uuid;
+
 
 // MCP Protocol Version
 const MCP_PROTOCOL_VERSION: &str = "2025-03-26";
@@ -114,10 +114,14 @@ pub fn create_mcp_router(state: Arc<McpServerState>) -> Router {
         .with_state(state)
 }
 
+
+
+
+
 // Handle POST /mcp
 async fn handle_post(
     State(state): State<Arc<McpServerState>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: String,
 ) -> impl IntoResponse {
     // Parse JSON body
@@ -131,22 +135,10 @@ async fn handle_post(
                 .into_response();
         }
     };
-    // Check origin for security
-    if let Some(origin) = headers.get("origin") {
-        if !is_valid_origin(origin.to_str().unwrap_or("")) {
-            return (
-                StatusCode::FORBIDDEN,
-                Json(json!({ "error": "Invalid origin" })),
-            )
-                .into_response();
-        }
-    }
 
-    // Parse session ID
-    let session_id = headers
-        .get("mcp-session-id")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
+
+    // For streamable HTTP, we don't require session ID
+    let session_id = None;
 
     // Handle single or batch requests
     if body.is_array() {
@@ -170,53 +162,64 @@ async fn handle_post(
 // Handle single JSON-RPC request
 async fn handle_single_request(
     state: Arc<McpServerState>,
-    session_id: Option<String>,
+    _session_id: Option<String>,
     request: JsonRpcRequest,
 ) -> Response {
     let method = request.method.as_str();
 
     // Handle initialize method
     if method == "initialize" {
-        let (session_id, response) = handle_initialize(state.clone(), request).await;
+        let (_session_id, response) = handle_initialize(state.clone(), request).await;
         
-        let mut headers = HeaderMap::new();
-        headers.insert(
-            HeaderName::from_static("mcp-session-id"),
-            HeaderValue::from_str(&session_id).unwrap(),
-        );
-
-        return (StatusCode::OK, headers, Json(response)).into_response();
+        return (StatusCode::OK, Json(response)).into_response();
     }
 
-    // Check session for other methods
-    let session_id = match session_id {
-        Some(id) => id,
-        None => {
-            return (
-                StatusCode::UNAUTHORIZED,
-                Json(json!({ "error": "Session ID required" })),
-            )
-                .into_response();
+    // For streamable HTTP, we use a default session
+    let session_id = "default".to_string();
+    
+    // Ensure default session exists
+    {
+        let mut sessions = state.sessions.write().await;
+        if !sessions.contains_key(&session_id) {
+            let session = Session {
+                id: session_id.clone(),
+                initialized: true,
+                created_at: SystemTime::now(),
+                last_activity: SystemTime::now(),
+                last_event_id: 0,
+                tools: vec![
+                    Tool {
+                        name: "browser_navigate".to_string(),
+                        description: Some("Open a URL in the default browser".to_string()),
+                        input_schema: json!({
+                            "type": "object",
+                            "properties": {
+                                "url": {
+                                    "type": "string",
+                                    "description": "The URL to open in the browser"
+                                }
+                            },
+                            "required": ["url"]
+                        }),
+                    },
+                ],
+                resources: vec![],
+            };
+            sessions.insert(session_id.clone(), session);
         }
-    };
-
-    // Validate session
-    let sessions = state.sessions.read().await;
-    if !sessions.contains_key(&session_id) {
-        return (
-            StatusCode::NOT_FOUND,
-            Json(json!({ "error": "Session not found" })),
-        )
-            .into_response();
     }
-    drop(sessions);
 
     // Process request based on method
     let request_id = request.id.clone();
     let response = match method {
-        "initialized" => handle_initialized(state.clone(), session_id.clone()).await,
-        "tools/list" => handle_tools_list(state.clone(), session_id.clone()).await,
-        "resources/list" => handle_resources_list(state.clone(), session_id.clone()).await,
+        "initialize" => {
+            let (new_session_id, response) = handle_initialize(state.clone(), request).await;
+            // Update session_id if it changed
+            response
+        },
+        "initialized" => handle_initialized(state.clone(), session_id.clone(), request_id.clone()).await,
+        "tools/list" => handle_tools_list(state.clone(), session_id.clone(), request_id.clone()).await,
+        "resources/list" => handle_resources_list(state.clone(), session_id.clone(), request_id.clone()).await,
         "tools/call" => handle_tools_call(state.clone(), session_id.clone(), request).await,
         _ => JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
@@ -267,26 +270,10 @@ async fn handle_batch_request(
 // Handle GET /mcp (SSE stream)
 async fn handle_get(
     State(state): State<Arc<McpServerState>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
 ) -> impl IntoResponse {
-    let session_id = headers
-        .get("mcp-session-id")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-
-    let session_id = match session_id {
-        Some(id) => id,
-        None => {
-            return StatusCode::UNAUTHORIZED.into_response();
-        }
-    };
-
-    // Validate session
-    let sessions = state.sessions.read().await;
-    if !sessions.contains_key(&session_id) {
-        return StatusCode::NOT_FOUND.into_response();
-    }
-    drop(sessions);
+    // For streamable HTTP, use default session
+    let session_id = "default".to_string();
 
     // Create SSE stream
     let stream = create_sse_stream(state, session_id);
@@ -315,25 +302,11 @@ fn create_sse_stream(
 
 // Handle DELETE /mcp
 async fn handle_delete(
-    State(state): State<Arc<McpServerState>>,
-    headers: HeaderMap,
+    State(_state): State<Arc<McpServerState>>,
+    _headers: HeaderMap,
 ) -> impl IntoResponse {
-    let session_id = headers
-        .get("mcp-session-id")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| s.to_string());
-
-    match session_id {
-        Some(id) => {
-            let mut sessions = state.sessions.write().await;
-            if sessions.remove(&id).is_some() {
-                StatusCode::OK
-            } else {
-                StatusCode::NOT_FOUND
-            }
-        }
-        None => StatusCode::BAD_REQUEST,
-    }
+    // For streamable HTTP without auth, just return OK
+    StatusCode::OK
 }
 
 // Handle initialize method
@@ -341,7 +314,8 @@ async fn handle_initialize(
     state: Arc<McpServerState>,
     request: JsonRpcRequest,
 ) -> (String, JsonRpcResponse) {
-    let session_id = Uuid::new_v4().to_string();
+    // For streamable HTTP, use a default session
+    let session_id = "default".to_string();
     
     let session = Session {
         id: session_id.clone(),
@@ -378,8 +352,7 @@ async fn handle_initialize(
             "protocolVersion": MCP_PROTOCOL_VERSION,
             "capabilities": {
                 "tools": {},
-                "resources": {},
-                "prompts": {}
+                "resources": {}
             },
             "serverInfo": {
                 "name": "browser-automation-mcp",
@@ -396,6 +369,7 @@ async fn handle_initialize(
 async fn handle_initialized(
     state: Arc<McpServerState>,
     session_id: String,
+    request_id: Option<Value>,
 ) -> JsonRpcResponse {
     let mut sessions = state.sessions.write().await;
     if let Some(session) = sessions.get_mut(&session_id) {
@@ -404,7 +378,7 @@ async fn handle_initialized(
 
     JsonRpcResponse {
         jsonrpc: "2.0".to_string(),
-        id: None,
+        id: request_id,
         result: Some(json!({})),
         error: None,
     }
@@ -414,6 +388,7 @@ async fn handle_initialized(
 async fn handle_tools_list(
     state: Arc<McpServerState>,
     session_id: String,
+    request_id: Option<Value>,
 ) -> JsonRpcResponse {
     let sessions = state.sessions.read().await;
     let tools = sessions
@@ -423,7 +398,7 @@ async fn handle_tools_list(
 
     JsonRpcResponse {
         jsonrpc: "2.0".to_string(),
-        id: Some(json!(1)),
+        id: request_id,
         result: Some(json!({
             "tools": tools
         })),
@@ -435,6 +410,7 @@ async fn handle_tools_list(
 async fn handle_resources_list(
     state: Arc<McpServerState>,
     session_id: String,
+    request_id: Option<Value>,
 ) -> JsonRpcResponse {
     let sessions = state.sessions.read().await;
     let resources = sessions
@@ -444,7 +420,7 @@ async fn handle_resources_list(
 
     JsonRpcResponse {
         jsonrpc: "2.0".to_string(),
-        id: Some(json!(1)),
+        id: request_id,
         result: Some(json!({
             "resources": resources
         })),
@@ -512,14 +488,7 @@ async fn handle_tools_call(
     }
 }
 
-// Validate origin
-fn is_valid_origin(origin: &str) -> bool {
-    // In production, configure allowed origins properly
-    matches!(
-        origin,
-        "http://localhost:1420" | "tauri://localhost" | "https://tauri.localhost"
-    )
-}
+
 
 // Start MCP server
 pub async fn start_mcp_server(state: Arc<McpServerState>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {

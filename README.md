@@ -50,6 +50,11 @@ npm run tauri dev
 
 The MCP server implements the Streamable HTTP Transport protocol (2025-03-26 specification) and can be accessed by any MCP-compatible client.
 
+#### Connect with Claude Desktop:
+```bash
+claude mcp add --transport http browser-automation http://localhost:37650/mcp
+```
+
 #### Initialize a session:
 ```bash
 curl -X POST http://localhost:37650/mcp \
