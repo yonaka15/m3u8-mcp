@@ -474,6 +474,19 @@ async fn handle_initialize(
                 }),
             },
             Tool {
+                name: "browser_tab_new".to_string(),
+                description: Some("Open a new browser tab".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "url": {
+                            "type": "string",
+                            "description": "The URL to navigate to in the new tab. If not provided, the new tab will be blank."
+                        }
+                    }
+                }),
+            },
+            Tool {
                 name: "browser_tab_switch".to_string(),
                 description: Some("Switch to a different browser tab".to_string()),
                 input_schema: json!({
@@ -999,6 +1012,23 @@ async fn handle_tools_call(
                 result.get("message").and_then(|v| v.as_str()).unwrap_or("Tab switched")
             } else {
                 result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to switch tab")
+            };
+            
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": message
+                }]
+            })
+        }
+        "browser_tab_new" => {
+            let url = arguments.get("url").and_then(|v| v.as_str()).map(|s| s.to_string());
+            let result = crate::cdp_browser::handle_browser_tab_new(url).await;
+            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
+            let message = if success {
+                result.get("message").and_then(|v| v.as_str()).unwrap_or("New tab created")
+            } else {
+                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to create new tab")
             };
             
             json!({

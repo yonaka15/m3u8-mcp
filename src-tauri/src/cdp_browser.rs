@@ -515,6 +515,51 @@ impl BrowserManager {
         }))
     }
     
+    // Create a new tab and navigate to URL (if provided)
+    pub async fn new_tab(&mut self, url: Option<&str>) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        let browser = self.browser.as_ref().ok_or("Browser not connected")?;
+        
+        // Create a new page (tab) using CDP
+        let new_page = browser.new_page("about:blank").await?;
+        
+        // Navigate to URL if provided
+        let final_url = if let Some(target_url) = url {
+            new_page.goto(target_url).await?;
+            target_url.to_string()
+        } else {
+            "about:blank".to_string()
+        };
+        
+        // Get page title
+        let title = match new_page.get_title().await {
+            Ok(Some(t)) => t,
+            Ok(None) => "New Tab".to_string(),
+            Err(_) => "New Tab".to_string(),
+        };
+        
+        // Add to tabs list
+        let index = self.tabs.len();
+        self.tabs.push(Tab {
+            page: Arc::new(new_page),
+            url: final_url.clone(),
+            title: title.clone(),
+            index,
+        });
+        
+        // Set as current tab
+        self.current_tab_index = Some(index);
+        
+        Ok(json!({
+            "success": true,
+            "message": format!("New tab created at index {}", index),
+            "tab": {
+                "index": index,
+                "title": title,
+                "url": final_url
+            }
+        }))
+    }
+    
     // Close a specific tab
     pub async fn close_tab(&mut self, index: usize) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         if index >= self.tabs.len() {
@@ -833,6 +878,27 @@ pub async fn handle_browser_tab_close(index: usize) -> Value {
         Err(e) => json!({
             "success": false,
             "error": format!("Tab close failed: {}", e)
+        })
+    }
+}
+
+// Handle new tab creation
+pub async fn handle_browser_tab_new(url: Option<String>) -> Value {
+    let mut manager = BROWSER_MANAGER.write().await;
+    
+    // Check if browser is opened
+    if manager.browser.is_none() {
+        return json!({
+            "success": false,
+            "error": "Browser not opened. Please call browser_open first"
+        });
+    }
+    
+    match manager.new_tab(url.as_deref()).await {
+        Ok(result) => result,
+        Err(e) => json!({
+            "success": false,
+            "error": format!("Tab creation failed: {}", e)
         })
     }
 }
