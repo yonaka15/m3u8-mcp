@@ -318,8 +318,8 @@ async fn handle_initialize(
                     "properties": {
                         "headless": {
                             "type": "boolean",
-                            "description": "Run in headless mode (no visible window). Default: true",
-                            "default": true
+                            "description": "Run in headless mode (no visible window). Default: false",
+                            "default": false
                         }
                     }
                 }),
@@ -605,7 +605,7 @@ async fn handle_tools_call(
     
     let result = match tool_name {
         "browser_open" => {
-            let headless = arguments.get("headless").and_then(|v| v.as_bool()).unwrap_or(true);
+            let headless = arguments.get("headless").and_then(|v| v.as_bool()).unwrap_or(false);
             let result = crate::cdp_browser::handle_browser_open(headless).await;
             let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
             let message = if success {

@@ -69,16 +69,16 @@ claude mcp add --transport http browser-automation http://localhost:37650/mcp
 
 The browser automation tools support both headless (background) and headful (visible window) modes:
 
-- **Headless mode (default)**: Browser runs in the background without a visible window
-- **Headful mode**: Browser window is visible for debugging and monitoring
+- **Headless mode**: Browser runs in the background without a visible window
+- **Headful mode (default)**: Browser window is visible for debugging and monitoring
 
 You must first open a browser instance before navigating:
 
 ```javascript
 // Step 1: Open browser (choose mode)
-await browser_open({ headless: true }); // Headless mode (default)
+await browser_open({ headless: false }); // Visible browser window (default)
 // or
-await browser_open({ headless: false }); // Visible browser window
+await browser_open({ headless: true }); // Headless mode
 
 // Step 2: Navigate to URLs
 await browser_navigate({ url: "https://example.com" });
@@ -137,7 +137,7 @@ Opens a new browser instance in headless or headful mode.
 
 **Parameters:**
 
-- `headless` (boolean, optional): Run in headless mode (default: true)
+- `headless` (boolean, optional): Run in headless mode (default: false)
 
 #### browser_navigate
 

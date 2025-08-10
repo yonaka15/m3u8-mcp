@@ -18,7 +18,7 @@ pub struct BrowserConfig {
 impl Default for BrowserConfig {
     fn default() -> Self {
         Self {
-            headless: true,
+            headless: false,
             timeout_seconds: 30,
             retry_attempts: 3,
             viewport_width: 1280,

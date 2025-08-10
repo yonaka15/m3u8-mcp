@@ -83,7 +83,7 @@ impl BrowserManager {
     // headless: true for headless mode (default), false for visible browser window
     pub async fn connect(&mut self, debug_port: Option<u16>, headless: Option<bool>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let port = debug_port.unwrap_or(9222);
-        let headless_mode = headless.unwrap_or(true); // デフォルトはheadlessモード
+        let headless_mode = headless.unwrap_or(false); // デフォルトはheadfulモード
         
         // Try to connect to existing Chrome instance
         let ws_url = format!("ws://localhost:{}/devtools/browser", port);
