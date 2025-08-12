@@ -120,7 +120,7 @@ impl BrowserManager {
                 let config = builder
                     .port(port)
                     .no_sandbox()  // サンドボックスを無効化（必要に応じて）
-                    .window_size(1280, 1024)  // ウィンドウサイズを設定
+                    .window_size(1440, 1080)  // ウィンドウサイズを設定
                     .user_data_dir(&user_data_dir)  // ユニークなプロファイルディレクトリ
                     .build()
                     .map_err(|e| format!("Failed to build browser config: {}", e))?;

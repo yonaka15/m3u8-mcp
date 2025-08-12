@@ -151,125 +151,49 @@ function App() {
   }
 
   return (
-    <main className="container">
-      <h1 className="text-3xl font-bold text-blue-600">
-        CDP-MCP Server Control
-      </h1>
+    <main className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
+      <div className="max-w-3xl mx-auto">
+        <h1 className="text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-8">
+          CDP-MCP Server Control
+        </h1>
 
-      <div
-        className="mcp-server-section"
-        style={{
-          margin: "2rem 0",
-          padding: "1rem",
-          border: "1px solid #ccc",
-          borderRadius: "8px",
-        }}
-      >
-        {mcpServerRunning && currentPort && (
-          <div
-            style={{
-              marginBottom: "1.5rem",
-              padding: "1rem",
-              backgroundColor: "#f0f9ff",
-              borderRadius: "0.5rem",
-              border: "1px solid #0284c7",
-            }}
-          >
-            <p
-              style={{
-                fontWeight: "600",
-                marginBottom: "1rem",
-                color: "#0c4a6e",
-                fontSize: "1.1rem",
-              }}
-            >
-              Connect with your preferred client:
-            </p>
-
-            {/* Claude Code */}
-            <div style={{ marginBottom: "1rem" }}>
-              <p
-                style={{
-                  fontWeight: "500",
-                  marginBottom: "0.5rem",
-                  color: "#0c4a6e",
-                  fontSize: "0.9rem",
-                }}
-              >
-                Claude Code:
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+          {mcpServerRunning && currentPort && (
+            <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <p className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
+                Connect with your preferred client:
               </p>
-              <div style={{ position: "relative" }}>
-                <code
-                  style={{
-                    display: "block",
-                    padding: "0.75rem",
-                    paddingRight: "3.5rem",
-                    backgroundColor: "#1e293b",
-                    color: "#94a3b8",
-                    borderRadius: "0.25rem",
-                    fontSize: "0.875rem",
-                    fontFamily: "monospace",
-                    whiteSpace: "nowrap",
-                    overflowX: "auto",
-                    textAlign: "left",
-                  }}
-                >
-                  claude mcp add --transport http browser-automation
-                  http://localhost:{currentPort}/mcp
-                </code>
-                <button
-                  onClick={() => copyToClipboard("claude-code")}
-                  style={{
-                    position: "absolute",
-                    top: "50%",
-                    right: "0.5rem",
-                    transform: "translateY(-50%)",
-                    padding: "0.25rem 0.5rem",
-                    backgroundColor:
-                      copiedCommand === "claude-code" ? "#10b981" : "#3b82f6",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "0.25rem",
-                    fontSize: "0.75rem",
-                    cursor: "pointer",
-                    transition: "background-color 0.2s",
-                  }}
-                >
-                  {copiedCommand === "claude-code" ? "✓ Copied" : "Copy"}
-                </button>
+
+              {/* Claude Code */}
+              <div className="mb-4">
+                <p className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  Claude Code:
+                </p>
+                <div className="relative">
+                  <code className="block p-3 pr-20 bg-gray-900 dark:bg-black text-gray-300 rounded text-sm font-mono whitespace-nowrap overflow-x-auto">
+                    claude mcp add --transport http browser-automation
+                    http://localhost:{currentPort}/mcp
+                  </code>
+                  <button
+                    onClick={() => copyToClipboard("claude-code")}
+                    className={`absolute top-1/2 right-2 -translate-y-1/2 px-3 py-1 text-xs font-medium text-white rounded transition-colors ${
+                      copiedCommand === "claude-code"
+                        ? "bg-green-600 hover:bg-green-700"
+                        : "bg-blue-600 hover:bg-blue-700"
+                    }`}
+                  >
+                    {copiedCommand === "claude-code" ? "✓ Copied" : "Copy"}
+                  </button>
+                </div>
               </div>
-            </div>
 
-            {/* Claude Desktop */}
-            <div style={{ marginBottom: "1rem" }}>
-              <p
-                style={{
-                  fontWeight: "500",
-                  marginBottom: "0.5rem",
-                  color: "#0c4a6e",
-                  fontSize: "0.9rem",
-                }}
-              >
-                Claude Desktop (add to mcpServers in claude_desktop_config.json):
-              </p>
-              <div style={{ position: "relative" }}>
-                <pre
-                  style={{
-                    display: "block",
-                    padding: "0.75rem",
-                    paddingRight: "3.5rem",
-                    backgroundColor: "#1e293b",
-                    color: "#94a3b8",
-                    borderRadius: "0.25rem",
-                    fontSize: "0.75rem",
-                    fontFamily: "monospace",
-                    overflowX: "auto",
-                    margin: 0,
-                    maxHeight: "150px",
-                    overflowY: "auto",
-                    textAlign: "left",
-                  }}
-                >
+              {/* Claude Desktop */}
+              <div className="mb-4">
+                <p className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  Claude Desktop (add to mcpServers in claude_desktop_config.json):
+                </p>
+                <div className="relative">
+                  <pre className="block p-3 pr-20 bg-gray-900 dark:bg-black text-gray-300 rounded text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
 {`"browser-automation": {
   "command": "npx",
   "args": [
@@ -278,203 +202,137 @@ function App() {
     "http://localhost:${currentPort}/mcp"
   ]
 }`}
-                </pre>
-                <button
-                  onClick={() => copyToClipboard("claude-desktop")}
-                  style={{
-                    position: "absolute",
-                    top: "0.5rem",
-                    right: "0.5rem",
-                    padding: "0.25rem 0.5rem",
-                    backgroundColor:
+                  </pre>
+                  <button
+                    onClick={() => copyToClipboard("claude-desktop")}
+                    className={`absolute top-2 right-2 px-3 py-1 text-xs font-medium text-white rounded transition-colors ${
                       copiedCommand === "claude-desktop"
-                        ? "#10b981"
-                        : "#3b82f6",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "0.25rem",
-                    fontSize: "0.75rem",
-                    cursor: "pointer",
-                    transition: "background-color 0.2s",
-                  }}
-                >
-                  {copiedCommand === "claude-desktop" ? "✓ Copied" : "Copy"}
-                </button>
+                        ? "bg-green-600 hover:bg-green-700"
+                        : "bg-blue-600 hover:bg-blue-700"
+                    }`}
+                  >
+                    {copiedCommand === "claude-desktop" ? "✓ Copied" : "Copy"}
+                  </button>
+                </div>
+              </div>
+
+              {/* VS Code */}
+              <div>
+                <p className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                  VS Code:
+                </p>
+                <div className="relative">
+                  <code className="block p-3 pr-20 bg-gray-900 dark:bg-black text-gray-300 rounded text-sm font-mono whitespace-nowrap overflow-x-auto">
+                    code --add-mcp "&#123;&quot;name&quot;:&quot;browser-automation&quot;,&quot;url&quot;:&quot;http://localhost:{currentPort}/mcp&quot;&#125;"
+                  </code>
+                  <button
+                    onClick={() => copyToClipboard("vscode")}
+                    className={`absolute top-1/2 right-2 -translate-y-1/2 px-3 py-1 text-xs font-medium text-white rounded transition-colors ${
+                      copiedCommand === "vscode"
+                        ? "bg-green-600 hover:bg-green-700"
+                        : "bg-blue-600 hover:bg-blue-700"
+                    }`}
+                  >
+                    {copiedCommand === "vscode" ? "✓ Copied" : "Copy"}
+                  </button>
+                </div>
               </div>
             </div>
-
-            {/* VS Code */}
-            <div>
-              <p
-                style={{
-                  fontWeight: "500",
-                  marginBottom: "0.5rem",
-                  color: "#0c4a6e",
-                  fontSize: "0.9rem",
-                }}
-              >
-                VS Code:
-              </p>
-              <div style={{ position: "relative" }}>
-                <code
-                  style={{
-                    display: "block",
-                    padding: "0.75rem",
-                    paddingRight: "3.5rem",
-                    backgroundColor: "#1e293b",
-                    color: "#94a3b8",
-                    borderRadius: "0.25rem",
-                    fontSize: "0.875rem",
-                    fontFamily: "monospace",
-                    whiteSpace: "nowrap",
-                    overflowX: "auto",
-                    textAlign: "left",
-                  }}
-                >
-                  code --add-mcp "&#123;&quot;name&quot;:&quot;browser-automation&quot;,&quot;url&quot;:&quot;http://localhost:{currentPort}/mcp&quot;&#125;"
-                </code>
-                <button
-                  onClick={() => copyToClipboard("vscode")}
-                  style={{
-                    position: "absolute",
-                    top: "0.5rem",
-                    right: "0.5rem",
-                    padding: "0.25rem 0.5rem",
-                    backgroundColor:
-                      copiedCommand === "vscode" ? "#10b981" : "#3b82f6",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "0.25rem",
-                    fontSize: "0.75rem",
-                    cursor: "pointer",
-                    transition: "background-color 0.2s",
-                  }}
-                >
-                  {copiedCommand === "vscode" ? "✓ Copied" : "Copy"}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        <div
-          className="row"
-          style={{ gap: "1rem", alignItems: "center", marginBottom: "1rem" }}
-        >
-          <label
-            htmlFor="port-input"
-            style={{
-              fontWeight: "500",
-              color: mcpServerRunning ? "#6b7280" : "#000",
-            }}
-          >
-            Port:
-          </label>
-          <input
-            id="port-input"
-            type="text"
-            value={portInput}
-            onChange={(e) => {
-              const value = e.target.value;
-              setPortInput(value);
-
-              // Parse the port and check availability
-              const newPort = value === "" ? null : parseInt(value);
-              checkPortAvailability(newPort);
-            }}
-            disabled={mcpServerRunning}
-            placeholder="37650"
-            style={{
-              padding: "0.5rem",
-              borderRadius: "0.25rem",
-              border: `1px solid ${
-                mcpServerRunning
-                  ? "#9ca3af"
-                  : checkingPort
-                    ? "#fbbf24"
-                    : portAvailable === false
-                      ? "#ef4444"
-                      : portAvailable === true
-                        ? "#10b981"
-                        : "#ccc"
-              }`,
-              width: "100px",
-              backgroundColor: mcpServerRunning ? "#e5e7eb" : "white",
-              color: mcpServerRunning ? "#6b7280" : "#000",
-              cursor: mcpServerRunning ? "not-allowed" : "text",
-              opacity: mcpServerRunning ? 0.6 : 1,
-              transition: "all 0.2s ease",
-            }}
-          />
-          {!mcpServerRunning && !mcpServerMessage && (
-            <span
-              style={{
-                fontSize: "0.875rem",
-                color: checkingPort
-                  ? "#fbbf24"
-                  : portAvailable === false
-                    ? "#ef4444"
-                    : portAvailable === true
-                      ? "#10b981"
-                      : "#6b7280",
-              }}
-            >
-              {checkingPort
-                ? "Checking..."
-                : portAvailable === false
-                  ? "❌ In use"
-                  : portAvailable === true
-                    ? "✅ Available"
-                    : ""}
-            </span>
           )}
-        </div>
-        <div className="row" style={{ gap: "1rem", alignItems: "center" }}>
-          <button
-            onClick={toggleMcpServer}
-            disabled={
-              !mcpServerRunning &&
-              (portAvailable === false || checkingPort || portInput === "")
-            }
-            className={`px-6 py-2 rounded-lg font-medium transition-colors ${
-              mcpServerRunning
-                ? "bg-red-500 hover:bg-red-600 text-white"
-                : portAvailable === false || checkingPort || portInput === ""
-                  ? "bg-gray-400 cursor-not-allowed text-gray-200"
-                  : "bg-green-500 hover:bg-green-600 text-white"
-            }`}
-            style={{
-              backgroundColor: mcpServerRunning
-                ? "#ef4444"
-                : portAvailable === false || checkingPort || portInput === ""
-                  ? "#9ca3af"
-                  : "#10b981",
-              color: "white",
-              padding: "0.5rem 1.5rem",
-              borderRadius: "0.5rem",
-              fontWeight: "500",
-              cursor:
+
+          <div className="flex items-center gap-4 mb-4">
+            <label
+              htmlFor="port-input"
+              className={`font-medium ${
+                mcpServerRunning ? "text-gray-500" : "text-gray-700 dark:text-gray-300"
+              }`}
+            >
+              Port:
+            </label>
+            <input
+              id="port-input"
+              type="text"
+              value={portInput}
+              onChange={(e) => {
+                const value = e.target.value;
+                setPortInput(value);
+
+                // Parse the port and check availability
+                const newPort = value === "" ? null : parseInt(value);
+                checkPortAvailability(newPort);
+              }}
+              disabled={mcpServerRunning}
+              placeholder="37650"
+              className={`px-3 py-2 rounded-md border ${
+                mcpServerRunning
+                  ? "bg-gray-100 dark:bg-gray-700 text-gray-500 cursor-not-allowed border-gray-300 dark:border-gray-600"
+                  : checkingPort
+                    ? "border-yellow-500 focus:ring-yellow-500"
+                    : portAvailable === false
+                      ? "border-red-500 focus:ring-red-500"
+                      : portAvailable === true
+                        ? "border-green-500 focus:ring-green-500"
+                        : "border-gray-300 dark:border-gray-600 focus:ring-blue-500"
+              } focus:outline-none focus:ring-2 transition-colors`}
+            />
+            {!mcpServerRunning && !mcpServerMessage && (
+              <span
+                className={`text-sm ${
+                  checkingPort
+                    ? "text-yellow-600"
+                    : portAvailable === false
+                      ? "text-red-600"
+                      : portAvailable === true
+                        ? "text-green-600"
+                        : "text-gray-600"
+                }`}
+              >
+                {checkingPort
+                  ? "Checking..."
+                  : portAvailable === false
+                    ? "❌ In use"
+                    : portAvailable === true
+                      ? "✅ Available"
+                      : ""}
+              </span>
+            )}
+          </div>
+
+          <div className="flex items-center gap-4">
+            <button
+              onClick={toggleMcpServer}
+              disabled={
                 !mcpServerRunning &&
                 (portAvailable === false || checkingPort || portInput === "")
-                  ? "not-allowed"
-                  : "pointer",
-            }}
-          >
-            {mcpServerRunning ? "Stop MCP Server" : "Start MCP Server"}
-          </button>
-          <span
-            className={`status-indicator ${mcpServerRunning ? "text-green-600" : "text-gray-500"}`}
-          >
-            Status:{" "}
-            {mcpServerRunning
-              ? `🟢 Running on port ${currentPort}`
-              : "⭕ Stopped"}
-          </span>
+              }
+              className={`px-6 py-2 rounded-lg font-medium transition-colors ${
+                mcpServerRunning
+                  ? "bg-red-500 hover:bg-red-600 text-white"
+                  : portAvailable === false || checkingPort || portInput === ""
+                    ? "bg-gray-400 cursor-not-allowed text-gray-200"
+                    : "bg-green-500 hover:bg-green-600 text-white"
+              }`}
+            >
+              {mcpServerRunning ? "Stop MCP Server" : "Start MCP Server"}
+            </button>
+            <span
+              className={`font-medium ${
+                mcpServerRunning ? "text-green-600 dark:text-green-400" : "text-gray-500"
+              }`}
+            >
+              Status:{" "}
+              {mcpServerRunning
+                ? `🟢 Running on port ${currentPort}`
+                : "⭕ Stopped"}
+            </span>
+          </div>
+
+          {mcpServerMessage && (
+            <p className="mt-4 text-sm text-red-600 dark:text-red-400">
+              {mcpServerMessage}
+            </p>
+          )}
         </div>
-        {mcpServerMessage && (
-          <p className="mt-2 text-sm" style={{ marginTop: "0.5rem" }}>
-            {mcpServerMessage}
-          </p>
-        )}
       </div>
     </main>
   );
