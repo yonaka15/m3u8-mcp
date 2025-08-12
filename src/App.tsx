@@ -9,7 +9,9 @@ function App() {
   const [currentPort, setCurrentPort] = useState<number | null>(null);
   const [portAvailable, setPortAvailable] = useState<boolean | null>(null);
   const [checkingPort, setCheckingPort] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [copiedCommand, setCopiedCommand] = useState<
+    "claude-code" | "claude-desktop" | "vscode" | null
+  >(null);
 
   // Check MCP server status on mount
   useEffect(() => {
@@ -108,12 +110,41 @@ function App() {
     }
   }
 
-  async function copyToClipboard() {
-    const command = `claude mcp add --transport http browser-automation http://localhost:${currentPort}/mcp`;
+  async function copyToClipboard(
+    type: "claude-code" | "claude-desktop" | "vscode",
+  ) {
+    let textToCopy = "";
+
+    switch (type) {
+      case "claude-code":
+        textToCopy = `claude mcp add --transport http browser-automation http://localhost:${currentPort}/mcp`;
+        break;
+      case "claude-desktop":
+        const desktopConfig = {
+          "browser-automation": {
+            command: "npx",
+            args: [
+              "-y",
+              "mcp-remote",
+              `http://localhost:${currentPort}/mcp`,
+            ],
+          },
+        };
+        textToCopy = JSON.stringify(desktopConfig, null, 2);
+        break;
+      case "vscode":
+        const vscodeConfig = {
+          name: "browser-automation",
+          url: `http://localhost:${currentPort}/mcp`
+        };
+        textToCopy = `code --add-mcp "${JSON.stringify(vscodeConfig).replace(/"/g, '\\"')}"`;
+        break;
+    }
+
     try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await navigator.clipboard.writeText(textToCopy);
+      setCopiedCommand(type);
+      setTimeout(() => setCopiedCommand(null), 2000);
     } catch (error) {
       console.error("Failed to copy to clipboard:", error);
     }
@@ -146,50 +177,182 @@ function App() {
           >
             <p
               style={{
-                fontWeight: "500",
-                marginBottom: "0.5rem",
+                fontWeight: "600",
+                marginBottom: "1rem",
                 color: "#0c4a6e",
+                fontSize: "1.1rem",
               }}
             >
-              Connect with Claude Code:
+              Connect with your preferred client:
             </p>
-            <div style={{ position: "relative" }}>
-              <code
+
+            {/* Claude Code */}
+            <div style={{ marginBottom: "1rem" }}>
+              <p
                 style={{
-                  display: "block",
-                  padding: "0.75rem",
-                  paddingRight: "3.5rem",
-                  backgroundColor: "#1e293b",
-                  color: "#94a3b8",
-                  borderRadius: "0.25rem",
-                  fontSize: "0.875rem",
-                  fontFamily: "monospace",
-                  whiteSpace: "nowrap",
-                  overflowX: "auto",
+                  fontWeight: "500",
+                  marginBottom: "0.5rem",
+                  color: "#0c4a6e",
+                  fontSize: "0.9rem",
                 }}
               >
-                claude mcp add --transport http browser-automation
-                http://localhost:{currentPort}/mcp
-              </code>
-              <button
-                onClick={copyToClipboard}
+                Claude Code:
+              </p>
+              <div style={{ position: "relative" }}>
+                <code
+                  style={{
+                    display: "block",
+                    padding: "0.75rem",
+                    paddingRight: "3.5rem",
+                    backgroundColor: "#1e293b",
+                    color: "#94a3b8",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.875rem",
+                    fontFamily: "monospace",
+                    whiteSpace: "nowrap",
+                    overflowX: "auto",
+                    textAlign: "left",
+                  }}
+                >
+                  claude mcp add --transport http browser-automation
+                  http://localhost:{currentPort}/mcp
+                </code>
+                <button
+                  onClick={() => copyToClipboard("claude-code")}
+                  style={{
+                    position: "absolute",
+                    top: "50%",
+                    right: "0.5rem",
+                    transform: "translateY(-50%)",
+                    padding: "0.25rem 0.5rem",
+                    backgroundColor:
+                      copiedCommand === "claude-code" ? "#10b981" : "#3b82f6",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.75rem",
+                    cursor: "pointer",
+                    transition: "background-color 0.2s",
+                  }}
+                >
+                  {copiedCommand === "claude-code" ? "✓ Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+
+            {/* Claude Desktop */}
+            <div style={{ marginBottom: "1rem" }}>
+              <p
                 style={{
-                  position: "absolute",
-                  top: "50%",
-                  right: "0.5rem",
-                  transform: "translateY(-50%)",
-                  padding: "0.25rem 0.5rem",
-                  backgroundColor: copied ? "#10b981" : "#3b82f6",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "0.25rem",
-                  fontSize: "0.75rem",
-                  cursor: "pointer",
-                  transition: "background-color 0.2s",
+                  fontWeight: "500",
+                  marginBottom: "0.5rem",
+                  color: "#0c4a6e",
+                  fontSize: "0.9rem",
                 }}
               >
-                {copied ? "✓ Copied" : "Copy"}
-              </button>
+                Claude Desktop (add to mcpServers in claude_desktop_config.json):
+              </p>
+              <div style={{ position: "relative" }}>
+                <pre
+                  style={{
+                    display: "block",
+                    padding: "0.75rem",
+                    paddingRight: "3.5rem",
+                    backgroundColor: "#1e293b",
+                    color: "#94a3b8",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.75rem",
+                    fontFamily: "monospace",
+                    overflowX: "auto",
+                    margin: 0,
+                    maxHeight: "150px",
+                    overflowY: "auto",
+                    textAlign: "left",
+                  }}
+                >
+{`"browser-automation": {
+  "command": "npx",
+  "args": [
+    "-y",
+    "mcp-remote",
+    "http://localhost:${currentPort}/mcp"
+  ]
+}`}
+                </pre>
+                <button
+                  onClick={() => copyToClipboard("claude-desktop")}
+                  style={{
+                    position: "absolute",
+                    top: "0.5rem",
+                    right: "0.5rem",
+                    padding: "0.25rem 0.5rem",
+                    backgroundColor:
+                      copiedCommand === "claude-desktop"
+                        ? "#10b981"
+                        : "#3b82f6",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.75rem",
+                    cursor: "pointer",
+                    transition: "background-color 0.2s",
+                  }}
+                >
+                  {copiedCommand === "claude-desktop" ? "✓ Copied" : "Copy"}
+                </button>
+              </div>
+            </div>
+
+            {/* VS Code */}
+            <div>
+              <p
+                style={{
+                  fontWeight: "500",
+                  marginBottom: "0.5rem",
+                  color: "#0c4a6e",
+                  fontSize: "0.9rem",
+                }}
+              >
+                VS Code:
+              </p>
+              <div style={{ position: "relative" }}>
+                <code
+                  style={{
+                    display: "block",
+                    padding: "0.75rem",
+                    paddingRight: "3.5rem",
+                    backgroundColor: "#1e293b",
+                    color: "#94a3b8",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.875rem",
+                    fontFamily: "monospace",
+                    whiteSpace: "nowrap",
+                    overflowX: "auto",
+                    textAlign: "left",
+                  }}
+                >
+                  code --add-mcp "&#123;&quot;name&quot;:&quot;browser-automation&quot;,&quot;url&quot;:&quot;http://localhost:{currentPort}/mcp&quot;&#125;"
+                </code>
+                <button
+                  onClick={() => copyToClipboard("vscode")}
+                  style={{
+                    position: "absolute",
+                    top: "0.5rem",
+                    right: "0.5rem",
+                    padding: "0.25rem 0.5rem",
+                    backgroundColor:
+                      copiedCommand === "vscode" ? "#10b981" : "#3b82f6",
+                    color: "white",
+                    border: "none",
+                    borderRadius: "0.25rem",
+                    fontSize: "0.75rem",
+                    cursor: "pointer",
+                    transition: "background-color 0.2s",
+                  }}
+                >
+                  {copiedCommand === "vscode" ? "✓ Copied" : "Copy"}
+                </button>
+              </div>
             </div>
           </div>
         )}
