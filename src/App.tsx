@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { translations, type Language } from "./i18n";
 import "./App.css";
 
 function App() {
@@ -12,6 +13,9 @@ function App() {
   const [copiedCommand, setCopiedCommand] = useState<
     "claude-code" | "claude-desktop" | "vscode" | null
   >(null);
+  const [language, setLanguage] = useState<Language>("en");
+
+  const t = translations[language];
 
   // Check MCP server status on mount
   useEffect(() => {
@@ -42,7 +46,7 @@ function App() {
       // If port is null or NaN, mark as invalid
       if (portToCheck === null || isNaN(portToCheck)) {
         setPortAvailable(false);
-        setMcpServerMessage("Please enter a valid port number");
+        setMcpServerMessage(t.portError);
         return;
       }
 
@@ -56,13 +60,13 @@ function App() {
       // Validate port range (port 0 is not allowed)
       if (portToCheck === 0) {
         setPortAvailable(false);
-        setMcpServerMessage("Port 0 is not allowed");
+        setMcpServerMessage(t.portNotAllowed);
         return;
       }
 
       if (portToCheck < 1024 || portToCheck > 65535) {
         setPortAvailable(false);
-        setMcpServerMessage("Port must be between 1024 and 65535");
+        setMcpServerMessage(t.portRange);
         return;
       }
 
@@ -84,7 +88,7 @@ function App() {
         setCheckingPort(false);
       }
     },
-    [mcpServerRunning, currentPort],
+    [mcpServerRunning, currentPort, t],
   );
 
   async function toggleMcpServer() {
@@ -97,7 +101,7 @@ function App() {
       } else {
         const port = parseInt(portInput);
         if (isNaN(port)) {
-          setMcpServerMessage("Please enter a valid port number");
+          setMcpServerMessage(t.portError);
           return;
         }
         await invoke<string>("start_mcp_server", { port });
@@ -106,7 +110,7 @@ function App() {
         setCurrentPort(port);
       }
     } catch (error) {
-      setMcpServerMessage(`Error: ${error}`);
+      setMcpServerMessage(`${t.error} ${error}`);
     }
   }
 
@@ -150,24 +154,40 @@ function App() {
     }
   }
 
+  function toggleLanguage() {
+    setLanguage(language === "en" ? "ja" : "en");
+  }
+
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto">
+        {/* Language Toggle Button */}
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={toggleLanguage}
+            className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-md font-medium text-sm text-gray-700 dark:text-gray-300 transition-colors"
+          >
+            <span className="font-mono">{language === "en" ? "EN" : "JP"}</span>
+            <span className="mx-1.5 text-gray-400">|</span>
+            <span className="font-mono text-gray-400">{language === "en" ? "JP" : "EN"}</span>
+          </button>
+        </div>
+
         <h1 className="text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-8">
-          CDP-MCP Server Control
+          {t.title}
         </h1>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
           {mcpServerRunning && currentPort && (
             <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
               <p className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
-                Connect with your preferred client:
+                {t.connectWith}
               </p>
 
               {/* Claude Code */}
               <div className="mb-4">
                 <p className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Claude Code:
+                  {t.claudeCode}
                 </p>
                 <div className="relative">
                   <code className="block p-3 pr-20 bg-gray-900 dark:bg-black text-gray-300 rounded text-sm font-mono whitespace-nowrap overflow-x-auto">
@@ -182,7 +202,7 @@ function App() {
                         : "bg-blue-600 hover:bg-blue-700"
                     }`}
                   >
-                    {copiedCommand === "claude-code" ? "✓ Copied" : "Copy"}
+                    {copiedCommand === "claude-code" ? t.copied : t.copy}
                   </button>
                 </div>
               </div>
@@ -190,7 +210,7 @@ function App() {
               {/* Claude Desktop */}
               <div className="mb-4">
                 <p className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  Claude Desktop (add to mcpServers in claude_desktop_config.json):
+                  {t.claudeDesktop}
                 </p>
                 <div className="relative">
                   <pre className="block p-3 pr-20 bg-gray-900 dark:bg-black text-gray-300 rounded text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
@@ -211,7 +231,7 @@ function App() {
                         : "bg-blue-600 hover:bg-blue-700"
                     }`}
                   >
-                    {copiedCommand === "claude-desktop" ? "✓ Copied" : "Copy"}
+                    {copiedCommand === "claude-desktop" ? t.copied : t.copy}
                   </button>
                 </div>
               </div>
@@ -219,7 +239,7 @@ function App() {
               {/* VS Code */}
               <div>
                 <p className="text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
-                  VS Code:
+                  {t.vsCode}
                 </p>
                 <div className="relative">
                   <code className="block p-3 pr-20 bg-gray-900 dark:bg-black text-gray-300 rounded text-sm font-mono whitespace-nowrap overflow-x-auto">
@@ -233,7 +253,7 @@ function App() {
                         : "bg-blue-600 hover:bg-blue-700"
                     }`}
                   >
-                    {copiedCommand === "vscode" ? "✓ Copied" : "Copy"}
+                    {copiedCommand === "vscode" ? t.copied : t.copy}
                   </button>
                 </div>
               </div>
@@ -247,7 +267,7 @@ function App() {
                 mcpServerRunning ? "text-gray-500" : "text-gray-700 dark:text-gray-300"
               }`}
             >
-              Port:
+              {t.port}
             </label>
             <input
               id="port-input"
@@ -288,11 +308,11 @@ function App() {
                 }`}
               >
                 {checkingPort
-                  ? "Checking..."
+                  ? t.checking
                   : portAvailable === false
-                    ? "❌ In use"
+                    ? t.inUse
                     : portAvailable === true
-                      ? "✅ Available"
+                      ? t.available
                       : ""}
               </span>
             )}
@@ -313,17 +333,17 @@ function App() {
                     : "bg-green-500 hover:bg-green-600 text-white"
               }`}
             >
-              {mcpServerRunning ? "Stop MCP Server" : "Start MCP Server"}
+              {mcpServerRunning ? t.stopServer : t.startServer}
             </button>
             <span
               className={`font-medium ${
                 mcpServerRunning ? "text-green-600 dark:text-green-400" : "text-gray-500"
               }`}
             >
-              Status:{" "}
+              {t.status}{" "}
               {mcpServerRunning
-                ? `🟢 Running on port ${currentPort}`
-                : "⭕ Stopped"}
+                ? `${t.running} ${currentPort}`
+                : t.stopped}
             </span>
           </div>
 

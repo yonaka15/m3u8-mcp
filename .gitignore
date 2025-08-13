@@ -68,6 +68,19 @@ test-mcp-server.sh
 temp.html
 screenshot_*.png
 
+# Generated icon files
+app-icon.png
+src-tauri/icons/*.png
+src-tauri/icons/*.ico
+src-tauri/icons/*.icns
+# iOS icons
+src-tauri/icons/ios/
+# Android icons
+src-tauri/icons/android/
+# Windows Store icons
+src-tauri/icons/StoreLogo.png
+src-tauri/icons/Square*.png
+
 # Python (if using Python integration later)
 __pycache__/
 *.py[cod]
