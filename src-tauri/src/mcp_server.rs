@@ -720,18 +720,21 @@ async fn handle_tools_call(
             
             if success {
                 if let Some(screenshot) = result.get("screenshot").and_then(|v| v.as_str()) {
-                    // Extract base64 data from data URL
-                    let base64_data = if screenshot.starts_with("data:image/png;base64,") {
-                        &screenshot[22..] // Remove "data:image/png;base64," prefix
+                    // Extract base64 data from data URL and determine mime type
+                    let (base64_data, mime_type) = if screenshot.starts_with("data:image/jpeg;base64,") {
+                        (&screenshot[23..], "image/jpeg")
+                    } else if screenshot.starts_with("data:image/png;base64,") {
+                        (&screenshot[22..], "image/png")
                     } else {
-                        screenshot
+                        // Assume it's already raw base64 data (JPEG from our processor)
+                        (screenshot, "image/jpeg")
                     };
                     
                     json!({
                         "content": [{
                             "type": "image",
                             "data": base64_data,
-                            "mimeType": "image/png"
+                            "mimeType": mime_type
                         }]
                     })
                 } else {

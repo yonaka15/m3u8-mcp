@@ -1,6 +1,7 @@
 mod mcp_server;
 mod cdp_browser;
 mod config;
+mod image_processor;
 
 use std::sync::Arc;
 use tauri::State;

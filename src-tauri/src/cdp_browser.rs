@@ -303,13 +303,24 @@ impl BrowserManager {
             ).await?
         };
         
-        // Convert to base64
-        let base64_data = BASE64.encode(&screenshot_data);
-        
-        Ok(json!({
-            "success": true,
-            "screenshot": format!("data:image/png;base64,{}", base64_data)
-        }))
+        // Process screenshot with Rust image processor
+        // Default quality: 85, max width: 1200px
+        match crate::image_processor::process_screenshot(screenshot_data.clone(), 85, 1200) {
+            Ok(jpeg_base64) => {
+                Ok(json!({
+                    "success": true,
+                    "screenshot": jpeg_base64  // Return raw base64 without data URL prefix
+                }))
+            }
+            Err(_) => {
+                // Fallback to original PNG if processing fails
+                let base64_data = BASE64.encode(&screenshot_data);
+                Ok(json!({
+                    "success": true,
+                    "screenshot": base64_data  // Return raw base64 without data URL prefix
+                }))
+            }
+        }
     }
 
     // Evaluate JavaScript

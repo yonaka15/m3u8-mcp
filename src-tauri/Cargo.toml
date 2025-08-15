@@ -42,4 +42,5 @@ chromiumoxide = { version = "0.7", features = ["tokio-runtime"], default-feature
 base64 = "0.22"
 lazy_static = "1.5"
 dirs = "5.0"
+image = "0.25.6"
 
