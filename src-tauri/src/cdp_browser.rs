@@ -2,6 +2,9 @@ use chromiumoxide::browser::{Browser, BrowserConfig};
 use chromiumoxide::cdp::browser_protocol::page::{
     CaptureScreenshotFormat, CaptureScreenshotParams
 };
+use chromiumoxide::cdp::browser_protocol::emulation::{
+    SetDeviceMetricsOverrideParams
+};
 use chromiumoxide::page::Page;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -120,7 +123,7 @@ impl BrowserManager {
                 let config = builder
                     .port(port)
                     .no_sandbox()  // サンドボックスを無効化（必要に応じて）
-                    .window_size(1440, 1080)  // ウィンドウサイズを設定
+                    .window_size(800, 600)  // ウィンドウサイズを設定（デフォルトビューポートに合わせる）
                     .user_data_dir(&user_data_dir)  // ユニークなプロファイルディレクトリ
                     .build()
                     .map_err(|e| format!("Failed to build browser config: {}", e))?;
@@ -174,6 +177,17 @@ impl BrowserManager {
     async fn navigate_internal(&mut self, url: &str) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         let browser = self.browser.as_ref().ok_or("Browser not connected")?;
         let page = browser.new_page(url).await?;
+        
+        // Set viewport size for the new page using CDP command
+        let device_metrics = SetDeviceMetricsOverrideParams::builder()
+            .width(800)
+            .height(600)
+            .device_scale_factor(1.0)
+            .mobile(false)
+            .build()
+            .map_err(|e| format!("Failed to build device metrics: {}", e))?;
+        page.execute(device_metrics).await?;
+        
         let page_arc = Arc::new(page);
         
         // Wait for page to load with timeout
@@ -532,6 +546,16 @@ impl BrowserManager {
         
         // Create a new page (tab) using CDP
         let new_page = browser.new_page("about:blank").await?;
+        
+        // Set viewport size for the new tab using CDP command
+        let device_metrics = SetDeviceMetricsOverrideParams::builder()
+            .width(800)
+            .height(600)
+            .device_scale_factor(1.0)
+            .mobile(false)
+            .build()
+            .map_err(|e| format!("Failed to build device metrics: {}", e))?;
+        new_page.execute(device_metrics).await?;
         
         // Navigate to URL if provided
         let final_url = if let Some(target_url) = url {
