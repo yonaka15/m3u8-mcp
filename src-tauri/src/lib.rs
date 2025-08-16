@@ -1,11 +1,10 @@
 mod mcp_server;
-mod cdp_browser;
-mod config;
-mod image_processor;
+mod redmine_client;
 
 use std::sync::Arc;
 use tauri::State;
 use tokio::sync::Mutex;
+use std::collections::HashMap;
 
 // Server state for Tauri
 struct ServerHandle {
@@ -181,25 +180,188 @@ async fn check_port_availability(port: u16) -> Result<bool, String> {
     }
 }
 
+// Redmine configuration commands
 #[tauri::command]
-async fn get_browser_status() -> Result<serde_json::Value, String> {
-    use serde_json::json;
+async fn configure_redmine(host: String, api_key: String) -> Result<String, String> {
+    // Initialize Redmine client
+    redmine_client::init_client(host.clone(), api_key.clone())
+        .await
+        .map_err(|e| format!("Failed to configure Redmine: {}", e))?;
     
-    let manager = crate::cdp_browser::BROWSER_MANAGER.read().await;
-    let session_data = manager.export_session();
+    // Save configuration to local storage
+    save_redmine_config(host.clone(), api_key)
+        .await
+        .map_err(|e| format!("Failed to save configuration: {}", e))?;
     
-    Ok(json!({
-        "connected": session_data.get("browser_connected").and_then(|v| v.as_bool()).unwrap_or(false),
-        "tabs": session_data.get("tabs").cloned().unwrap_or(json!([])),
-        "console_messages": manager.get_console_messages(20)
-    }))
+    Ok(format!("Redmine configured: {}", host))
+}
+
+// Save Redmine configuration to local storage
+async fn save_redmine_config(host: String, api_key: String) -> Result<(), Box<dyn std::error::Error>> {
+    use std::fs;
+    
+    // Get app data directory using home directory
+    let home_dir = dirs::home_dir()
+        .ok_or("Failed to get home directory")?;
+    let config_dir = home_dir.join(".redmine-mcp");
+    
+    // Create directory if it doesn't exist
+    fs::create_dir_all(&config_dir)?;
+    
+    // Save configuration as JSON
+    let config_path = config_dir.join("config.json");
+    let config = serde_json::json!({
+        "host": host,
+        "api_key": api_key
+    });
+    
+    fs::write(config_path, config.to_string())?;
+    Ok(())
+}
+
+// Load Redmine configuration from local storage
+#[tauri::command]
+async fn load_redmine_config() -> Result<serde_json::Value, String> {
+    use std::fs;
+    
+    // Get app data directory using home directory
+    let home_dir = dirs::home_dir()
+        .ok_or("Failed to get home directory")?;
+    let config_dir = home_dir.join(".redmine-mcp");
+    
+    let config_path = config_dir.join("config.json");
+    
+    // Check if config file exists
+    if !config_path.exists() {
+        return Ok(serde_json::json!(null));
+    }
+    
+    // Read and parse configuration
+    let config_str = fs::read_to_string(config_path)
+        .map_err(|e| format!("Failed to read configuration: {}", e))?;
+    
+    let config: serde_json::Value = serde_json::from_str(&config_str)
+        .map_err(|e| format!("Failed to parse configuration: {}", e))?;
+    
+    // Initialize Redmine client with saved configuration
+    if let (Some(host), Some(api_key)) = (config.get("host"), config.get("api_key")) {
+        if let (Some(host_str), Some(api_key_str)) = (host.as_str(), api_key.as_str()) {
+            redmine_client::init_client(host_str.to_string(), api_key_str.to_string())
+                .await
+                .map_err(|e| format!("Failed to initialize Redmine client: {}", e))?;
+        }
+    }
+    
+    Ok(config)
 }
 
 #[tauri::command]
-async fn clear_browser_console() -> Result<String, String> {
-    let mut manager = crate::cdp_browser::BROWSER_MANAGER.write().await;
-    manager.clear_console();
-    Ok("Console cleared".to_string())
+async fn test_redmine_connection() -> Result<serde_json::Value, String> {
+    let guard = redmine_client::get_client()
+        .await
+        .map_err(|e| format!("Failed to get client: {}", e))?;
+    
+    if let Some(client) = guard.as_ref() {
+        // Test connection by getting current user
+        match client.get_current_user().await {
+            Ok(user) => Ok(user),
+            Err(e) => Err(format!("Connection test failed: {}", e))
+        }
+    } else {
+        Err("Redmine client not configured".to_string())
+    }
+}
+
+// Redmine Issue commands
+#[tauri::command]
+async fn list_redmine_issues(params: HashMap<String, String>) -> Result<serde_json::Value, String> {
+    let guard = redmine_client::get_client()
+        .await
+        .map_err(|e| format!("Failed to get client: {}", e))?;
+    
+    if let Some(client) = guard.as_ref() {
+        client.list_issues(params)
+            .await
+            .map_err(|e| format!("Failed to list issues: {}", e))
+    } else {
+        Err("Redmine client not configured".to_string())
+    }
+}
+
+#[tauri::command]
+async fn get_redmine_issue(id: u32) -> Result<serde_json::Value, String> {
+    let guard = redmine_client::get_client()
+        .await
+        .map_err(|e| format!("Failed to get client: {}", e))?;
+    
+    if let Some(client) = guard.as_ref() {
+        client.get_issue(id)
+            .await
+            .map_err(|e| format!("Failed to get issue: {}", e))
+    } else {
+        Err("Redmine client not configured".to_string())
+    }
+}
+
+#[tauri::command]
+async fn create_redmine_issue(issue: serde_json::Value) -> Result<serde_json::Value, String> {
+    let guard = redmine_client::get_client()
+        .await
+        .map_err(|e| format!("Failed to get client: {}", e))?;
+    
+    if let Some(client) = guard.as_ref() {
+        client.create_issue(issue)
+            .await
+            .map_err(|e| format!("Failed to create issue: {}", e))
+    } else {
+        Err("Redmine client not configured".to_string())
+    }
+}
+
+#[tauri::command]
+async fn update_redmine_issue(id: u32, issue: serde_json::Value) -> Result<serde_json::Value, String> {
+    let guard = redmine_client::get_client()
+        .await
+        .map_err(|e| format!("Failed to get client: {}", e))?;
+    
+    if let Some(client) = guard.as_ref() {
+        client.update_issue(id, issue)
+            .await
+            .map_err(|e| format!("Failed to update issue: {}", e))
+    } else {
+        Err("Redmine client not configured".to_string())
+    }
+}
+
+// Redmine Project commands
+#[tauri::command]
+async fn list_redmine_projects(params: HashMap<String, String>) -> Result<serde_json::Value, String> {
+    let guard = redmine_client::get_client()
+        .await
+        .map_err(|e| format!("Failed to get client: {}", e))?;
+    
+    if let Some(client) = guard.as_ref() {
+        client.list_projects(params)
+            .await
+            .map_err(|e| format!("Failed to list projects: {}", e))
+    } else {
+        Err("Redmine client not configured".to_string())
+    }
+}
+
+#[tauri::command]
+async fn get_redmine_project(id: String) -> Result<serde_json::Value, String> {
+    let guard = redmine_client::get_client()
+        .await
+        .map_err(|e| format!("Failed to get client: {}", e))?;
+    
+    if let Some(client) = guard.as_ref() {
+        client.get_project(&id)
+            .await
+            .map_err(|e| format!("Failed to get project: {}", e))
+    } else {
+        Err("Redmine client not configured".to_string())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -220,8 +382,15 @@ pub fn run() {
             stop_mcp_server,
             get_mcp_server_status,
             check_port_availability,
-            get_browser_status,
-            clear_browser_console
+            configure_redmine,
+            load_redmine_config,
+            test_redmine_connection,
+            list_redmine_issues,
+            get_redmine_issue,
+            create_redmine_issue,
+            update_redmine_issue,
+            list_redmine_projects,
+            get_redmine_project
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

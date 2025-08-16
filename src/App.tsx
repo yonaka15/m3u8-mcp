@@ -14,12 +14,19 @@ function App() {
     "claude-code" | "claude-desktop" | "vscode" | null
   >(null);
   const [language, setLanguage] = useState<Language>("en");
+  
+  // Redmine configuration
+  const [redmineHost, setRedmineHost] = useState<string>("");
+  const [redmineApiKey, setRedmineApiKey] = useState<string>("");
+  const [redmineConfigured, setRedmineConfigured] = useState(false);
+  const [testingConnection, setTestingConnection] = useState(false);
 
   const t = translations[language];
 
-  // Check MCP server status on mount
+  // Check MCP server status and load Redmine config on mount
   useEffect(() => {
     checkMcpServerStatus();
+    loadRedmineConfiguration();
     const port = parseInt(portInput);
     if (!isNaN(port)) {
       checkPortAvailability(port);
@@ -38,6 +45,33 @@ function App() {
       }
     } catch (error) {
       console.error("Failed to check MCP server status:", error);
+    }
+  }
+
+  async function loadRedmineConfiguration() {
+    try {
+      const config = await invoke<{ host: string; api_key: string } | null>(
+        "load_redmine_config",
+      );
+      if (config && config.host && config.api_key) {
+        setRedmineHost(config.host);
+        setRedmineApiKey(config.api_key);
+        // Auto-test connection after loading
+        setTestingConnection(true);
+        try {
+          const user = await invoke<any>("test_redmine_connection");
+          setRedmineConfigured(true);
+          setMcpServerMessage(`Connected to Redmine as: ${user.user?.login || "unknown"}`);
+        } catch (error) {
+          setRedmineConfigured(false);
+          // Don't show error message on auto-test failure
+        } finally {
+          setTestingConnection(false);
+          setMcpServerMessage("");
+        }
+      }
+    } catch (error) {
+      console.error("Failed to load Redmine configuration:", error);
     }
   }
 
@@ -91,6 +125,34 @@ function App() {
     [mcpServerRunning, currentPort, t],
   );
 
+  async function testRedmineConnection() {
+    if (!redmineHost || !redmineApiKey) {
+      setMcpServerMessage("Please enter Redmine host and API key");
+      return;
+    }
+
+    setTestingConnection(true);
+    setMcpServerMessage("");
+
+    try {
+      // Configure Redmine client
+      await invoke<string>("configure_redmine", {
+        host: redmineHost,
+        apiKey: redmineApiKey,
+      });
+
+      // Test connection
+      const user = await invoke<any>("test_redmine_connection");
+      setRedmineConfigured(true);
+      setMcpServerMessage(`Connected to Redmine as: ${user.user?.login || "unknown"}`);
+    } catch (error) {
+      setRedmineConfigured(false);
+      setMcpServerMessage(`Failed to connect to Redmine: ${error}`);
+    } finally {
+      setTestingConnection(false);
+    }
+  }
+
   async function toggleMcpServer() {
     try {
       if (mcpServerRunning) {
@@ -99,11 +161,19 @@ function App() {
         setMcpServerRunning(false);
         setCurrentPort(null);
       } else {
+        // Check if Redmine is configured
+        if (!redmineConfigured) {
+          setMcpServerMessage("Please configure and test Redmine connection first");
+          return;
+        }
+
         const port = parseInt(portInput);
         if (isNaN(port)) {
           setMcpServerMessage(t.portError);
           return;
         }
+        
+        // Start MCP server
         await invoke<string>("start_mcp_server", { port });
         setMcpServerMessage(""); // Clear message since status indicator shows the running state
         setMcpServerRunning(true);
@@ -121,11 +191,11 @@ function App() {
 
     switch (type) {
       case "claude-code":
-        textToCopy = `claude mcp add --transport http browser-automation http://localhost:${currentPort}/mcp`;
+        textToCopy = `claude mcp add --transport http redmine http://localhost:${currentPort}/mcp`;
         break;
       case "claude-desktop":
         const desktopConfig = {
-          "browser-automation": {
+          "redmine": {
             command: "npx",
             args: [
               "-y",
@@ -138,7 +208,7 @@ function App() {
         break;
       case "vscode":
         const vscodeConfig = {
-          name: "browser-automation",
+          name: "redmine",
           url: `http://localhost:${currentPort}/mcp`
         };
         textToCopy = `code --add-mcp "${JSON.stringify(vscodeConfig).replace(/"/g, '\\"')}"`;
@@ -174,10 +244,76 @@ function App() {
         </div>
 
         <h1 className="text-4xl font-bold text-center text-blue-600 dark:text-blue-400 mb-8">
-          {t.title}
+          Redmine MCP Server
         </h1>
 
         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6">
+          {/* Redmine Configuration Section */}
+          {!mcpServerRunning && (
+            <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg border border-yellow-200 dark:border-yellow-800">
+              <h2 className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
+                Redmine Configuration
+              </h2>
+              
+              <div className="space-y-4">
+                <div>
+                  <label
+                    htmlFor="redmine-host"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >
+                    Redmine Host URL
+                  </label>
+                  <input
+                    id="redmine-host"
+                    type="text"
+                    value={redmineHost}
+                    onChange={(e) => setRedmineHost(e.target.value)}
+                    placeholder="https://redmine.example.com"
+                    className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label
+                    htmlFor="redmine-api-key"
+                    className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1"
+                  >
+                    Redmine API Key
+                  </label>
+                  <input
+                    id="redmine-api-key"
+                    type="password"
+                    value={redmineApiKey}
+                    onChange={(e) => setRedmineApiKey(e.target.value)}
+                    placeholder="Your API key from Redmine account settings"
+                    className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <button
+                    onClick={testRedmineConnection}
+                    disabled={testingConnection || !redmineHost || !redmineApiKey}
+                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                      testingConnection || !redmineHost || !redmineApiKey
+                        ? "bg-gray-400 cursor-not-allowed text-gray-200"
+                        : redmineConfigured
+                          ? "bg-green-500 hover:bg-green-600 text-white"
+                          : "bg-blue-500 hover:bg-blue-600 text-white"
+                    }`}
+                  >
+                    {testingConnection ? "Testing..." : redmineConfigured ? "✓ Connection Verified" : "Test Connection"}
+                  </button>
+                  {redmineConfigured && (
+                    <span className="text-green-600 dark:text-green-400 font-medium">
+                      ✓ Ready to start server
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
           {mcpServerRunning && currentPort && (
             <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
               <p className="text-lg font-semibold mb-4 text-gray-800 dark:text-gray-200">
@@ -191,7 +327,7 @@ function App() {
                 </p>
                 <div className="relative">
                   <code className="block p-3 pr-20 bg-gray-900 dark:bg-black text-gray-300 rounded text-sm font-mono whitespace-nowrap overflow-x-auto">
-                    claude mcp add --transport http browser-automation
+                    claude mcp add --transport http redmine
                     http://localhost:{currentPort}/mcp
                   </code>
                   <button
@@ -214,7 +350,7 @@ function App() {
                 </p>
                 <div className="relative">
                   <pre className="block p-3 pr-20 bg-gray-900 dark:bg-black text-gray-300 rounded text-xs font-mono overflow-x-auto max-h-40 overflow-y-auto">
-{`"browser-automation": {
+{`"redmine": {
   "command": "npx",
   "args": [
     "-y",
@@ -243,7 +379,7 @@ function App() {
                 </p>
                 <div className="relative">
                   <code className="block p-3 pr-20 bg-gray-900 dark:bg-black text-gray-300 rounded text-sm font-mono whitespace-nowrap overflow-x-auto">
-                    code --add-mcp "&#123;&quot;name&quot;:&quot;browser-automation&quot;,&quot;url&quot;:&quot;http://localhost:{currentPort}/mcp&quot;&#125;"
+                    code --add-mcp "&#123;&quot;name&quot;:&quot;redmine&quot;,&quot;url&quot;:&quot;http://localhost:{currentPort}/mcp&quot;&#125;"
                   </code>
                   <button
                     onClick={() => copyToClipboard("vscode")}
@@ -323,12 +459,12 @@ function App() {
               onClick={toggleMcpServer}
               disabled={
                 !mcpServerRunning &&
-                (portAvailable === false || checkingPort || portInput === "")
+                (portAvailable === false || checkingPort || portInput === "" || !redmineConfigured)
               }
               className={`px-6 py-2 rounded-lg font-medium transition-colors ${
                 mcpServerRunning
                   ? "bg-red-500 hover:bg-red-600 text-white"
-                  : portAvailable === false || checkingPort || portInput === ""
+                  : portAvailable === false || checkingPort || portInput === "" || !redmineConfigured
                     ? "bg-gray-400 cursor-not-allowed text-gray-200"
                     : "bg-green-500 hover:bg-green-600 text-white"
               }`}

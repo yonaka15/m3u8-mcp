@@ -1,16 +1,16 @@
-# CDP-MCP
+# Redmine MCP
 
-Chrome DevTools Protocol MCP Server - A desktop application that provides browser automation capabilities through the Model Context Protocol (MCP), built with Tauri, React, and Rust.
+Redmine MCP Server - A desktop application that provides Redmine API access through the Model Context Protocol (MCP), built with Tauri, React, and Rust.
 
-![CDP-MCP Dashboard](./docs/images/cdp-mcp-dashboard.png)
+![Redmine MCP Dashboard](./docs/images/redmine-mcp-dashboard.png)
 
-The CDP-MCP dashboard provides an intuitive interface for managing your MCP server. Simply click "Stop MCP Server" or "Start MCP Server" to control the service, and use the provided command to connect with Claude Code.
+The Redmine MCP dashboard provides an intuitive interface for managing your MCP server. Configure your Redmine connection, test it, and start the server to enable AI-powered Redmine interactions.
 
 ## 🚀 Features
 
 - **MCP Server**: Streamable HTTP server using Axum on configurable port (default: 37650)
-- **Browser Automation**: Control browsers programmatically via Chrome DevTools Protocol
-- **Headless/Headful Mode**: Run browser in background (headless) or with visible window
+- **Redmine Integration**: Full access to Redmine API for issues, projects, users, and time tracking
+- **Secure Configuration**: API key authentication with connection testing
 - **Cross-Platform**: Works on macOS, Windows, and Linux
 - **Modern UI**: React-based interface with Tailwind CSS styling
 - **Real-time Control**: Start/stop MCP server from the UI
@@ -20,15 +20,16 @@ The CDP-MCP dashboard provides an intuitive interface for managing your MCP serv
 - Node.js (v16 or higher)
 - Rust (latest stable)
 - npm/pnpm/yarn
-- A modern web browser (Chrome, Firefox, Safari, etc.)
+- A Redmine server with API access enabled
+- Your Redmine API key (found in your account settings)
 
 ## 🛠️ Installation
 
 1. Clone the repository:
 
 ```bash
-git clone https://github.com/yonaka15/cdp-mcp.git
-cd cdp-mcp
+git clone https://github.com/yonaka15/redmine-mcp.git
+cd redmine-mcp
 ```
 
 2. Install dependencies:
@@ -44,6 +45,20 @@ npm run tauri dev
 ```
 
 ## 🎮 Usage
+
+### Setting up Redmine Connection
+
+1. **Get your Redmine API key**:
+   - Log into your Redmine instance
+   - Go to "My account" (usually in top-right menu)
+   - Find your API access key on the right side of the page
+   - If no key exists, click "Show" under "API access key"
+
+2. **Configure in the app**:
+   - Enter your Redmine server URL (e.g., `https://redmine.example.com`)
+   - Enter your API key
+   - Click "Test Connection" to verify
+   - Once verified, you can start the MCP server
 
 ### Running as MCP Server
 
@@ -65,164 +80,143 @@ Add to your Claude Desktop configuration:
 ```json
 {
   "mcpServers": {
-    "browser-automation": {
-      "url": "http://localhost:37650"
+    "redmine": {
+      "url": "http://localhost:37650/mcp"
     }
   }
 }
 ```
 
-### Browser Mode Configuration
-
-The browser automation tools support both headless (background) and headful (visible window) modes:
-
-- **Headless mode**: Browser runs in the background without a visible window
-- **Headful mode (default)**: Browser window is visible for debugging and monitoring
-
-You must first open a browser instance before navigating:
-
-```javascript
-// Step 1: Open browser (choose mode)
-await browser_open({ headless: false }); // Visible browser window (default)
-// or
-await browser_open({ headless: true }); // Headless mode
-
-// Step 2: Navigate to URLs
-await browser_navigate({ url: "https://example.com" });
-
-// Step 3: Interact with the page
-await browser_click({ selector: "button" });
-await browser_type({ selector: "input", text: "Hello" });
-
-// Step 4: Close when done
-await browser_close();
-```
-
-
 ## 🔧 Available MCP Tools
 
-### Core Browser Controls
+### Configuration Tools
 
-#### browser_open
-
-Opens a new browser instance in headless or headful mode.
-
-**Parameters:**
-
-- `headless` (boolean, optional): Run in headless mode (default: false)
-
-#### browser_navigate
-
-Navigates to a URL in the browser (requires browser_open first).
+#### redmine_configure
+Configure Redmine connection settings.
 
 **Parameters:**
+- `host` (string, required): Redmine server URL
+- `api_key` (string, required): Redmine API key
 
-- `url` (string, required): The URL to navigate to
+#### redmine_test_connection
+Test the Redmine connection.
 
-#### browser_close
+### Issue Management
 
-Closes the browser and all tabs.
-
-### Page Interaction
-
-#### browser_click
-
-Clicks an element on the page.
+#### redmine_list_issues
+List Redmine issues with filtering options.
 
 **Parameters:**
+- `project_id` (string): Project ID or identifier
+- `assigned_to_id` (string): User ID of assignee
+- `status_id` (string): Status ID
+- `tracker_id` (string): Tracker ID
+- `limit` (number): Maximum results (default: 25)
+- `offset` (number): Pagination offset
 
-- `selector` (string, required): CSS selector for the element to click
-
-#### browser_type
-
-Types text into an input field.
-
-**Parameters:**
-
-- `selector` (string, required): CSS selector for the input field
-- `text` (string, required): Text to type
-
-#### browser_select_option
-
-Selects an option in a dropdown.
+#### redmine_get_issue
+Get a specific issue by ID.
 
 **Parameters:**
+- `id` (number, required): Issue ID
 
-- `selector` (string, required): CSS selector for the dropdown
-- `values` (array, required): Values to select
-
-### Navigation
-
-#### browser_go_back
-
-Navigates back in browser history.
-
-#### browser_go_forward
-
-Navigates forward in browser history.
-
-#### browser_reload
-
-Reloads the current page.
-
-### Page Content
-
-#### browser_get_content
-
-Gets the HTML content of the current page.
-
-#### browser_screenshot
-
-Takes a screenshot of the current page.
+#### redmine_create_issue
+Create a new issue.
 
 **Parameters:**
+- `project_id` (string, required): Project ID or identifier
+- `subject` (string, required): Issue subject
+- `description` (string): Issue description
+- `tracker_id` (number): Tracker ID
+- `status_id` (number): Status ID
+- `priority_id` (number): Priority ID
+- `assigned_to_id` (number): Assignee user ID
+- `parent_issue_id` (number): Parent issue ID
+- `start_date` (string): Start date (YYYY-MM-DD)
+- `due_date` (string): Due date (YYYY-MM-DD)
+- `estimated_hours` (number): Estimated hours
 
-- `full_page` (boolean, optional): Capture full page (default: false)
-
-#### browser_snapshot
-
-Gets a snapshot of the current page state including tabs, console messages, and page info.
-
-### JavaScript Execution
-
-#### browser_evaluate
-
-Executes JavaScript in the browser.
-
-**Parameters:**
-
-- `script` (string, required): JavaScript code to execute
-
-#### browser_wait_for
-
-Waits for an element to appear.
+#### redmine_update_issue
+Update an existing issue.
 
 **Parameters:**
+- `id` (number, required): Issue ID
+- `subject` (string): New subject
+- `description` (string): New description
+- `status_id` (number): New status ID
+- `priority_id` (number): New priority ID
+- `assigned_to_id` (number): New assignee ID
+- `done_ratio` (number): Progress (0-100)
+- `notes` (string): Update notes/comment
 
-- `selector` (string, required): CSS selector to wait for
-- `timeout` (number, optional): Timeout in milliseconds (default: 30000)
-
-### Tab Management
-
-#### browser_tab_list
-
-Lists all open browser tabs.
-
-#### browser_tab_switch
-
-Switches to a different browser tab.
+#### redmine_delete_issue
+Delete an issue.
 
 **Parameters:**
+- `id` (number, required): Issue ID
 
-- `index` (number, required): Tab index to switch to
+### Project Management
 
-#### browser_tab_close
-
-Closes a specific browser tab.
+#### redmine_list_projects
+List all projects.
 
 **Parameters:**
+- `limit` (number): Maximum results (default: 25)
+- `offset` (number): Pagination offset
 
-- `index` (number, required): Tab index to close
+#### redmine_get_project
+Get a specific project.
+
+**Parameters:**
+- `id` (string, required): Project ID or identifier
+
+#### redmine_create_project
+Create a new project.
+
+**Parameters:**
+- `name` (string, required): Project name
+- `identifier` (string, required): Unique identifier
+- `description` (string): Project description
+- `parent_id` (number): Parent project ID
+- `is_public` (boolean): Public visibility (default: false)
+
+### User Management
+
+#### redmine_list_users
+List users.
+
+**Parameters:**
+- `status` (number): User status (1=active, 2=registered, 3=locked)
+- `name` (string): Filter by name
+- `limit` (number): Maximum results (default: 25)
+- `offset` (number): Pagination offset
+
+#### redmine_get_current_user
+Get the current API user's information.
+
+### Time Tracking
+
+#### redmine_list_time_entries
+List time entries.
+
+**Parameters:**
+- `issue_id` (number): Filter by issue ID
+- `project_id` (string): Filter by project ID
+- `user_id` (number): Filter by user ID
+- `from` (string): From date (YYYY-MM-DD)
+- `to` (string): To date (YYYY-MM-DD)
+- `limit` (number): Maximum results (default: 25)
+
+#### redmine_create_time_entry
+Create a time entry.
+
+**Parameters:**
+- `hours` (number, required): Hours spent
+- `issue_id` (number): Issue ID
+- `project_id` (string): Project ID (required if issue_id not provided)
+- `activity_id` (number): Activity ID
+- `comments` (string): Comments
+- `spent_on` (string): Date (YYYY-MM-DD)
 
 ## 🏗️ Tech Stack
 
@@ -238,33 +232,30 @@ Closes a specific browser tab.
 - **Rust** - Core backend language
 - **Tauri v2** - Desktop application framework
 - **Axum** - Web framework for MCP Streamable HTTP server
-- **Chromiumoxide** - Chrome DevTools Protocol client
+- **Reqwest** - HTTP client for Redmine API
 - **Tokio** - Async runtime
 - **Tower-http** - CORS and middleware support
-- **Image crate** - Image processing (JPEG compression)
 
 ### Protocol
 
 - **MCP Streamable HTTP** - HTTP/SSE transport with Axum
 - **JSON-RPC 2.0** - Message format
 - **Server-Sent Events (SSE)** - Real-time server-to-client streaming
-- **Chrome DevTools Protocol** - Browser control protocol
+- **Redmine REST API** - Issue tracking system API
 
 ## 📁 Project Structure
 
 ```
-cdp-mcp/
+redmine-mcp/
 ├── src/                      # React frontend
-│   ├── App.tsx              # Main UI component with MCP controls
+│   ├── App.tsx              # Main UI with Redmine config & MCP controls
 │   ├── App.css              # Tailwind CSS styles
 │   └── main.tsx             # Application entry point
 ├── src-tauri/               # Rust backend
 │   ├── src/
-│   │   ├── lib.rs           # Tauri commands and server lifecycle
+│   │   ├── lib.rs           # Tauri commands & server lifecycle
 │   │   ├── mcp_server.rs    # MCP Streamable HTTP server (Axum)
-│   │   ├── cdp_browser.rs   # Chrome DevTools Protocol integration
-│   │   ├── image_processor.rs # Rust image processing for screenshots
-│   │   └── config.rs        # Configuration management
+│   │   └── redmine_client.rs # Redmine API client
 │   ├── Cargo.toml           # Rust dependencies
 │   └── tauri.conf.json      # Tauri configuration
 ├── .claude/                 # Claude AI documentation
@@ -297,11 +288,11 @@ Test the MCP server endpoints:
 ./test-mcp-server.sh
 ```
 
-Or manually test with curl commands as shown in the Usage section.
+Or manually test with curl commands.
 
 ## 🦀 Why Rust?
 
-CDP-MCP leverages Rust's unique advantages for browser automation:
+Redmine MCP leverages Rust's unique advantages:
 
 ### Performance
 
@@ -317,31 +308,28 @@ CDP-MCP leverages Rust's unique advantages for browser automation:
 
 ### Integration
 
-- **chromiumoxide** - Native Rust CDP client for direct Chrome control
+- **Axum** - Modern async web framework for HTTP/SSE
+- **Reqwest** - Reliable HTTP client for Redmine API
 - **Tauri v2** - Seamless desktop app integration with minimal resource usage
 - **Async/Await** - Modern async runtime with Tokio for concurrent operations
-
-### Developer Experience
-
-- **Type Safety** - Catch errors at compile time, not runtime
-- **Pattern Matching** - Elegant handling of complex browser states
-- **Cargo Ecosystem** - Rich ecosystem of high-quality libraries
-
-These benefits make CDP-MCP more reliable and performant than JavaScript or Python alternatives, especially for long-running automation tasks.
 
 ## 🚧 Roadmap
 
 - [x] MCP Streamable HTTP server with Axum
-- [x] Chrome DevTools Protocol integration
-- [x] Full browser automation suite (17 tools)
-- [x] Screenshot capture with JPEG compression
-- [x] Tab management
-- [x] Pure Rust implementation
-- [x] Window size optimization (800x600)
-- [ ] Chrome extension integration
-- [ ] Recording and playback of browser actions
-- [ ] Browser profile management
-- [ ] Cookie management
+- [x] Redmine API integration
+- [x] Issue management tools
+- [x] Project management tools
+- [x] User management tools
+- [x] Time tracking tools
+- [x] Secure API key configuration
+- [x] Connection testing
+- [ ] Wiki page management
+- [ ] File attachment support
+- [ ] Custom field support
+- [ ] Issue relations management
+- [ ] Version/milestone management
+- [ ] Activity feeds
+- [ ] Saved queries support
 
 ## 🤝 Contributing
 
@@ -361,6 +349,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [Tauri](https://tauri.app/) - For the amazing desktop framework
 - [MCP Specification](https://spec.modelcontextprotocol.io/) - For the protocol documentation
+- [Redmine](https://www.redmine.org/) - For the powerful project management system
 
 ## 📞 Support
 
@@ -371,4 +360,4 @@ For issues and questions:
 
 ---
 
-**Note**: The application supports both connecting to existing Chrome instances with debug port or launching new instances automatically.
+**Note**: Ensure your Redmine instance has API access enabled and you have a valid API key before using this application.

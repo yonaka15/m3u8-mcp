@@ -6,7 +6,8 @@ use axum::{
     routing::post,
     Json, Router,
 };
-use futures::stream::{self, Stream};
+use futures::stream::{self};
+use futures::StreamExt;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
@@ -100,7 +101,6 @@ impl McpServerState {
         }
     }
 }
-
 // Create MCP router
 pub fn create_mcp_router(state: Arc<McpServerState>) -> Router {
     Router::new()
@@ -113,10 +113,6 @@ pub fn create_mcp_router(state: Arc<McpServerState>) -> Router {
         .with_state(state)
 }
 
-
-
-
-
 // Handle POST /mcp
 #[axum::debug_handler]
 async fn handle_post(
@@ -125,132 +121,49 @@ async fn handle_post(
 ) -> Response {
     // Convert body to string
     let body_str = String::from_utf8_lossy(&body);
-    // Parse JSON body
-    let body_value: Value = match serde_json::from_str(&body_str) {
-        Ok(v) => v,
-        Err(_) => {
-            return (
-                StatusCode::BAD_REQUEST,
-                Json(json!({ "error": "Invalid JSON" })),
-            )
-                .into_response();
+    
+    // Parse JSON-RPC request
+    let request: JsonRpcRequest = match serde_json::from_str(&body_str) {
+        Ok(req) => req,
+        Err(e) => {
+            let error_response = JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id: None,
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32700,
+                    message: format!("Parse error: {}", e),
+                    data: None,
+                }),
+            };
+            return Json(error_response).into_response();
         }
     };
 
-
-    // For streamable HTTP, we don't require session ID
-    let session_id = None;
-
-    // Handle single or batch requests
-    if body_value.is_array() {
-        handle_batch_request(state, session_id, body_value.as_array().unwrap().clone()).await
-    } else {
-        let request: JsonRpcRequest = match serde_json::from_value(body_value) {
-            Ok(req) => req,
-            Err(_) => {
-                return (
-                    StatusCode::BAD_REQUEST,
-                    Json(json!({ "error": "Invalid JSON-RPC request" })),
-                )
-                    .into_response();
-            }
-        };
-
-        handle_single_request(state, session_id, request).await
-    }
-}
-
-// Handle single JSON-RPC request
-async fn handle_single_request(
-    state: Arc<McpServerState>,
-    _session_id: Option<String>,
-    request: JsonRpcRequest,
-) -> Response {
-    let method = request.method.as_str();
-
-    // Handle initialize method
-    if method == "initialize" {
-        let (_session_id, response) = handle_initialize(state.clone(), request).await;
-        
-        return (StatusCode::OK, Json(response)).into_response();
-    }
-
-    // For streamable HTTP, we use a default session
-    let session_id = "default".to_string();
-    
-    // Ensure default session exists
-    {
-        let mut sessions = state.sessions.write().await;
-        if !sessions.contains_key(&session_id) {
-            let session = Session {
-                id: session_id.clone(),
-                initialized: true,
-                created_at: SystemTime::now(),
-                last_activity: SystemTime::now(),
-                last_event_id: 0,
-                tools: vec![],
-                resources: vec![],
-            };
-            sessions.insert(session_id.clone(), session);
-        }
-    }
-
-    // Process request based on method
-    let request_id = request.id.clone();
-    let response = match method {
+    // Route to appropriate handler based on method
+    let response = match request.method.as_str() {
         "initialize" => {
-            let (_new_session_id, response) = handle_initialize(state.clone(), request).await;
-            // Update session_id if it changed
+            let (_session_id, response) = handle_initialize(state.clone(), request).await;
+            // Store session for this connection
             response
-        },
-        "initialized" => handle_initialized(state.clone(), session_id.clone(), request_id.clone()).await,
-        "tools/list" => handle_tools_list(state.clone(), session_id.clone(), request_id.clone()).await,
-        "resources/list" => handle_resources_list(state.clone(), session_id.clone(), request_id.clone()).await,
-        "tools/call" => handle_tools_call(state.clone(), session_id.clone(), request).await,
+        }
+        "initialized" => handle_initialized(state.clone(), "default".to_string(), request.id).await,
+        "tools/list" => handle_tools_list(state.clone(), "default".to_string(), request.id).await,
+        "resources/list" => handle_resources_list(state.clone(), "default".to_string(), request.id).await,
+        "tools/call" => handle_tool_call(state.clone(), "default".to_string(), request).await,
         _ => JsonRpcResponse {
             jsonrpc: "2.0".to_string(),
-            id: request_id.clone(),
+            id: request.id,
             result: None,
             error: Some(JsonRpcError {
                 code: -32601,
-                message: "Method not found".to_string(),
+                message: format!("Method not found: {}", request.method),
                 data: None,
             }),
         },
     };
 
-    // Return response
-    if request_id.is_some() {
-        (StatusCode::OK, Json(response)).into_response()
-    } else {
-        StatusCode::ACCEPTED.into_response()
-    }
-}
-
-// Handle batch request
-async fn handle_batch_request(
-    _state: Arc<McpServerState>,
-    _session_id: Option<String>,
-    requests: Vec<Value>,
-) -> Response {
-    let mut has_requests = false;
-
-    for req_value in requests {
-        if let Ok(request) = serde_json::from_value::<JsonRpcRequest>(req_value) {
-            if request.id.is_some() {
-                has_requests = true;
-            }
-            // Note: In production, batch processing would be more sophisticated
-            // Here we're simplifying for the initial implementation
-        }
-    }
-
-    if has_requests {
-        // Return SSE stream for batch responses
-        StatusCode::ACCEPTED.into_response()
-    } else {
-        StatusCode::ACCEPTED.into_response()
-    }
+    Json(response).into_response()
 }
 
 // Handle GET /mcp (SSE stream)
@@ -260,39 +173,57 @@ async fn handle_get(
 ) -> impl IntoResponse {
     // For streamable HTTP, use default session
     let session_id = "default".to_string();
+    
+    // Create or get session
+    let mut sessions = state.sessions.write().await;
+    if !sessions.contains_key(&session_id) {
+        let session = Session {
+            id: session_id.clone(),
+            initialized: false,
+            created_at: SystemTime::now(),
+            last_activity: SystemTime::now(),
+            last_event_id: 0,
+            tools: vec![],
+            resources: vec![],
+        };
+        sessions.insert(session_id.clone(), session);
+    }
+    drop(sessions);
 
     // Create SSE stream
-    let stream = create_sse_stream(state, session_id);
-    Sse::new(stream).into_response()
+    let stream = stream::repeat_with(move || {
+        Event::default()
+            .data("ping")
+            .event("ping")
+    })
+    .map(Ok::<_, Infallible>)
+    .take(1); // Just send one ping for now
+
+    Sse::new(stream)
+        .keep_alive(
+            axum::response::sse::KeepAlive::new()
+                .interval(Duration::from_secs(30))
+                .text("ping")
+        )
 }
 
-// Create SSE stream
-fn create_sse_stream(
-    _state: Arc<McpServerState>,
-    _session_id: String,
-) -> impl Stream<Item = Result<Event, Infallible>> {
-    stream::unfold(
-        0u64,
-        |counter| async move {
-            // Send heartbeat every 30 seconds
-            tokio::time::sleep(Duration::from_secs(30)).await;
-            
-            let event = Event::default()
-                .event("ping")
-                .data("{}");
-            
-            Some((Ok(event), counter + 1))
-        },
-    )
-}
-
-// Handle DELETE /mcp
+// Handle DELETE /mcp (session cleanup)
 async fn handle_delete(
-    State(_state): State<Arc<McpServerState>>,
-    _headers: HeaderMap,
+    State(state): State<Arc<McpServerState>>,
+    headers: HeaderMap,
 ) -> impl IntoResponse {
-    // For streamable HTTP without auth, just return OK
-    StatusCode::OK
+    // Get session ID from header
+    let session_id = headers
+        .get("Mcp-Session-Id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("default")
+        .to_string();
+
+    // Remove session
+    let mut sessions = state.sessions.write().await;
+    sessions.remove(&session_id);
+
+    StatusCode::ACCEPTED.into_response()
 }
 
 // Handle initialize method
@@ -300,9 +231,10 @@ async fn handle_initialize(
     state: Arc<McpServerState>,
     request: JsonRpcRequest,
 ) -> (String, JsonRpcResponse) {
-    // For streamable HTTP, use a default session
+    // For streamable HTTP, use default session
     let session_id = "default".to_string();
-    
+
+    // Create new session with Redmine tools
     let session = Session {
         id: session_id.clone(),
         initialized: true,
@@ -310,208 +242,361 @@ async fn handle_initialize(
         last_activity: SystemTime::now(),
         last_event_id: 0,
         tools: vec![
+            // Redmine configuration
             Tool {
-                name: "browser_open".to_string(),
-                description: Some("Open a new browser instance".to_string()),
+                name: "redmine_configure".to_string(),
+                description: Some("Configure Redmine connection".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "headless": {
+                        "host": {
+                            "type": "string",
+                            "description": "Redmine server URL (e.g., https://redmine.example.com)"
+                        },
+                        "api_key": {
+                            "type": "string",
+                            "description": "Redmine API key"
+                        }
+                    },
+                    "required": ["host", "api_key"]
+                }),
+            },
+            Tool {
+                name: "redmine_test_connection".to_string(),
+                description: Some("Test Redmine connection".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            // Issue management
+            Tool {
+                name: "redmine_list_issues".to_string(),
+                description: Some("List Redmine issues".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "Project ID or identifier"
+                        },
+                        "assigned_to_id": {
+                            "type": "string",
+                            "description": "User ID of assignee"
+                        },
+                        "status_id": {
+                            "type": "string",
+                            "description": "Status ID"
+                        },
+                        "tracker_id": {
+                            "type": "string",
+                            "description": "Tracker ID"
+                        },
+                        "limit": {
+                            "type": "number",
+                            "description": "Maximum number of issues to return",
+                            "default": 25
+                        },
+                        "offset": {
+                            "type": "number",
+                            "description": "Offset for pagination",
+                            "default": 0
+                        }
+                    }
+                }),
+            },
+            Tool {
+                name: "redmine_get_issue".to_string(),
+                description: Some("Get a specific Redmine issue".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "number",
+                            "description": "Issue ID"
+                        }
+                    },
+                    "required": ["id"]
+                }),
+            },
+            Tool {
+                name: "redmine_create_issue".to_string(),
+                description: Some("Create a new Redmine issue".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "project_id": {
+                            "type": "string",
+                            "description": "Project ID or identifier"
+                        },
+                        "subject": {
+                            "type": "string",
+                            "description": "Issue subject"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Issue description"
+                        },
+                        "tracker_id": {
+                            "type": "number",
+                            "description": "Tracker ID"
+                        },
+                        "status_id": {
+                            "type": "number",
+                            "description": "Status ID"
+                        },
+                        "priority_id": {
+                            "type": "number",
+                            "description": "Priority ID"
+                        },
+                        "assigned_to_id": {
+                            "type": "number",
+                            "description": "User ID of assignee"
+                        },
+                        "parent_issue_id": {
+                            "type": "number",
+                            "description": "Parent issue ID"
+                        },
+                        "start_date": {
+                            "type": "string",
+                            "description": "Start date (YYYY-MM-DD)"
+                        },
+                        "due_date": {
+                            "type": "string",
+                            "description": "Due date (YYYY-MM-DD)"
+                        },
+                        "estimated_hours": {
+                            "type": "number",
+                            "description": "Estimated hours"
+                        }
+                    },
+                    "required": ["project_id", "subject"]
+                }),
+            },
+            Tool {
+                name: "redmine_update_issue".to_string(),
+                description: Some("Update an existing Redmine issue".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "number",
+                            "description": "Issue ID"
+                        },
+                        "subject": {
+                            "type": "string",
+                            "description": "Issue subject"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Issue description"
+                        },
+                        "status_id": {
+                            "type": "number",
+                            "description": "Status ID"
+                        },
+                        "priority_id": {
+                            "type": "number",
+                            "description": "Priority ID"
+                        },
+                        "assigned_to_id": {
+                            "type": "number",
+                            "description": "User ID of assignee"
+                        },
+                        "done_ratio": {
+                            "type": "number",
+                            "description": "Progress percentage (0-100)"
+                        },
+                        "notes": {
+                            "type": "string",
+                            "description": "Update notes/comment"
+                        }
+                    },
+                    "required": ["id"]
+                }),
+            },
+            Tool {
+                name: "redmine_delete_issue".to_string(),
+                description: Some("Delete a Redmine issue".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "issueNumber": {
+                            "type": "number",
+                            "description": "Issue ID"
+                        }
+                    },
+                    "required": ["issueNumber"]
+                }),
+            },
+            // Project management
+            Tool {
+                name: "redmine_list_projects".to_string(),
+                description: Some("List Redmine projects".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "limit": {
+                            "type": "number",
+                            "description": "Maximum number of projects to return",
+                            "default": 25
+                        },
+                        "offset": {
+                            "type": "number",
+                            "description": "Offset for pagination",
+                            "default": 0
+                        }
+                    }
+                }),
+            },
+            Tool {
+                name: "redmine_get_project".to_string(),
+                description: Some("Get a specific Redmine project".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "Project ID or identifier"
+                        }
+                    },
+                    "required": ["id"]
+                }),
+            },
+            Tool {
+                name: "redmine_create_project".to_string(),
+                description: Some("Create a new Redmine project".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "name": {
+                            "type": "string",
+                            "description": "Project name"
+                        },
+                        "identifier": {
+                            "type": "string",
+                            "description": "Project identifier (unique)"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Project description"
+                        },
+                        "parent_id": {
+                            "type": "number",
+                            "description": "Parent project ID"
+                        },
+                        "is_public": {
                             "type": "boolean",
-                            "description": "Run in headless mode (no visible window). Default: false",
+                            "description": "Whether the project is public",
                             "default": false
                         }
-                    }
-                }),
-            },
-            Tool {
-                name: "browser_navigate".to_string(),
-                description: Some("Navigate to a URL in the browser (requires browser_open first)".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "The URL to navigate to"
-                        }
                     },
-                    "required": ["url"]
+                    "required": ["name", "identifier"]
                 }),
             },
+            // User management
             Tool {
-                name: "browser_click".to_string(),
-                description: Some("Click an element on the page".to_string()),
+                name: "redmine_list_users".to_string(),
+                description: Some("List Redmine users".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "selector": {
-                            "type": "string",
-                            "description": "CSS selector for the element to click"
-                        }
-                    },
-                    "required": ["selector"]
-                }),
-            },
-            Tool {
-                name: "browser_type".to_string(),
-                description: Some("Type text into an input field".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "selector": {
-                            "type": "string",
-                            "description": "CSS selector for the input field"
+                        "status": {
+                            "type": "number",
+                            "description": "User status (1=active, 2=registered, 3=locked)"
                         },
-                        "text": {
+                        "name": {
                             "type": "string",
-                            "description": "Text to type"
-                        }
-                    },
-                    "required": ["selector", "text"]
-                }),
-            },
-            Tool {
-                name: "browser_screenshot".to_string(),
-                description: Some("Take a screenshot of the current page".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "full_page": {
-                            "type": "boolean",
-                            "description": "Whether to capture the full page",
-                            "default": false
-                        }
-                    }
-                }),
-            },
-            Tool {
-                name: "browser_evaluate".to_string(),
-                description: Some("Execute JavaScript in the browser".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "script": {
-                            "type": "string",
-                            "description": "JavaScript code to execute"
-                        }
-                    },
-                    "required": ["script"]
-                }),
-            },
-            Tool {
-                name: "browser_wait_for".to_string(),
-                description: Some("Wait for an element to appear".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "selector": {
-                            "type": "string",
-                            "description": "CSS selector to wait for"
+                            "description": "Filter by name"
                         },
-                        "timeout": {
+                        "limit": {
                             "type": "number",
-                            "description": "Timeout in milliseconds",
-                            "default": 30000
-                        }
-                    },
-                    "required": ["selector"]
-                }),
-            },
-            Tool {
-                name: "browser_get_content".to_string(),
-                description: Some("Get the HTML content of the current page".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {}
-                }),
-            },
-            Tool {
-                name: "browser_go_back".to_string(),
-                description: Some("Navigate back in browser history".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {}
-                }),
-            },
-            Tool {
-                name: "browser_go_forward".to_string(),
-                description: Some("Navigate forward in browser history".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {}
-                }),
-            },
-            Tool {
-                name: "browser_reload".to_string(),
-                description: Some("Reload the current page".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {}
-                }),
-            },
-            Tool {
-                name: "browser_close".to_string(),
-                description: Some("Close the browser".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {}
-                }),
-            },
-            Tool {
-                name: "browser_snapshot".to_string(),
-                description: Some("Get a snapshot of the current page state".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {}
-                }),
-            },
-            Tool {
-                name: "browser_tab_list".to_string(),
-                description: Some("List all open browser tabs".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {}
-                }),
-            },
-            Tool {
-                name: "browser_tab_new".to_string(),
-                description: Some("Open a new browser tab".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "url": {
-                            "type": "string",
-                            "description": "The URL to navigate to in the new tab. If not provided, the new tab will be blank."
+                            "description": "Maximum number of users to return",
+                            "default": 25
+                        },
+                        "offset": {
+                            "type": "number",
+                            "description": "Offset for pagination",
+                            "default": 0
                         }
                     }
                 }),
             },
             Tool {
-                name: "browser_tab_switch".to_string(),
-                description: Some("Switch to a different browser tab".to_string()),
+                name: "redmine_get_current_user".to_string(),
+                description: Some("Get current Redmine user".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            // Time tracking
+            Tool {
+                name: "redmine_list_time_entries".to_string(),
+                description: Some("List time entries".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "index": {
+                        "issue_id": {
                             "type": "number",
-                            "description": "Tab index to switch to"
+                            "description": "Issue ID"
+                        },
+                        "project_id": {
+                            "type": "string",
+                            "description": "Project ID or identifier"
+                        },
+                        "user_id": {
+                            "type": "number",
+                            "description": "User ID"
+                        },
+                        "from": {
+                            "type": "string",
+                            "description": "From date (YYYY-MM-DD)"
+                        },
+                        "to": {
+                            "type": "string",
+                            "description": "To date (YYYY-MM-DD)"
+                        },
+                        "limit": {
+                            "type": "number",
+                            "description": "Maximum number of entries to return",
+                            "default": 25
                         }
-                    },
-                    "required": ["index"]
+                    }
                 }),
             },
             Tool {
-                name: "browser_tab_close".to_string(),
-                description: Some("Close a specific browser tab".to_string()),
+                name: "redmine_create_time_entry".to_string(),
+                description: Some("Create a time entry".to_string()),
                 input_schema: json!({
                     "type": "object",
                     "properties": {
-                        "index": {
+                        "issue_id": {
                             "type": "number",
-                            "description": "Tab index to close"
+                            "description": "Issue ID"
+                        },
+                        "project_id": {
+                            "type": "string",
+                            "description": "Project ID (required if issue_id is not provided)"
+                        },
+                        "hours": {
+                            "type": "number",
+                            "description": "Time spent in hours"
+                        },
+                        "activity_id": {
+                            "type": "number",
+                            "description": "Activity ID"
+                        },
+                        "comments": {
+                            "type": "string",
+                            "description": "Comments for the time entry"
+                        },
+                        "spent_on": {
+                            "type": "string",
+                            "description": "Date the time was spent (YYYY-MM-DD)"
                         }
                     },
-                    "required": ["index"]
+                    "required": ["hours"]
                 }),
             },
         ],
@@ -531,7 +616,7 @@ async fn handle_initialize(
                 "resources": {}
             },
             "serverInfo": {
-                "name": "browser-automation-mcp",
+                "name": "redmine-mcp",
                 "version": "0.1.0"
             }
         })),
@@ -604,459 +689,676 @@ async fn handle_resources_list(
     }
 }
 
-// Handle tools/call method
-async fn handle_tools_call(
+// Handle tool execution
+async fn handle_tool_call(
     _state: Arc<McpServerState>,
     _session_id: String,
     request: JsonRpcRequest,
 ) -> JsonRpcResponse {
-    // Parse the tool call parameters
-    let params = request.params.unwrap_or(json!({}));
-    let tool_name = params.get("name").and_then(|v| v.as_str()).unwrap_or("");
-    let empty_args = json!({});
-    let arguments = params.get("arguments").unwrap_or(&empty_args);
-    
+    let params = match request.params {
+        Some(p) => p,
+        None => {
+            return JsonRpcResponse {
+                jsonrpc: "2.0".to_string(),
+                id: request.id,
+                result: None,
+                error: Some(JsonRpcError {
+                    code: -32602,
+                    message: "Invalid params".to_string(),
+                    data: None,
+                }),
+            };
+        }
+    };
+
+    let tool_name = params["name"].as_str().unwrap_or("");
+    let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
+
+    // Execute tool based on name
     let result = match tool_name {
-        "browser_open" => {
-            let headless = arguments.get("headless").and_then(|v| v.as_bool()).unwrap_or(false);
-            let result = crate::cdp_browser::handle_browser_open(headless).await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            let message = if success {
-                result.get("message").and_then(|v| v.as_str()).unwrap_or("Browser opened successfully")
-            } else {
-                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to open browser")
-            };
+        "redmine_configure" => {
+            let host = arguments["host"].as_str().unwrap_or("");
+            let api_key = arguments["api_key"].as_str().unwrap_or("");
             
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": message
-                }]
-            })
-        }
-        "browser_navigate" => {
-            let url = arguments.get("url").and_then(|v| v.as_str()).unwrap_or("");
-            if url.is_empty() {
-                json!({
+            match crate::redmine_client::init_client(host.to_string(), api_key.to_string()).await {
+                Ok(_) => json!({
                     "content": [{
                         "type": "text",
-                        "text": "Error: URL is required"
+                        "text": format!("Redmine configured successfully for {}", host)
                     }]
-                })
-            } else {
-                let result = crate::cdp_browser::handle_browser_navigate(url).await;
-                let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-                let message = if success {
-                    result.get("message").and_then(|v| v.as_str()).unwrap_or("Navigated successfully")
-                } else {
-                    result.get("error").and_then(|v| v.as_str()).unwrap_or("Navigation failed")
-                };
-                
-                json!({
+                }),
+                Err(e) => json!({
                     "content": [{
                         "type": "text",
-                        "text": message
+                        "text": format!("Failed to configure Redmine: {}", e)
                     }]
                 })
             }
         }
-        "browser_click" => {
-            let selector = arguments.get("selector").and_then(|v| v.as_str()).unwrap_or("");
-            if selector.is_empty() {
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": "Error: Selector is required"
-                    }]
-                })
-            } else {
-                let result = crate::cdp_browser::handle_browser_click(selector).await;
-                let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-                let message = if success {
-                    result.get("message").and_then(|v| v.as_str()).unwrap_or("Clicked successfully")
-                } else {
-                    result.get("error").and_then(|v| v.as_str()).unwrap_or("Click failed")
-                };
-                
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": message
-                    }]
-                })
-            }
-        }
-        "browser_type" => {
-            let selector = arguments.get("selector").and_then(|v| v.as_str()).unwrap_or("");
-            let text = arguments.get("text").and_then(|v| v.as_str()).unwrap_or("");
-            if selector.is_empty() || text.is_empty() {
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": "Error: Both selector and text are required"
-                    }]
-                })
-            } else {
-                let result = crate::cdp_browser::handle_browser_type(selector, text).await;
-                let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-                let message = if success {
-                    result.get("message").and_then(|v| v.as_str()).unwrap_or("Typed successfully")
-                } else {
-                    result.get("error").and_then(|v| v.as_str()).unwrap_or("Type failed")
-                };
-                
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": message
-                    }]
-                })
-            }
-        }
-        "browser_screenshot" => {
-            let full_page = arguments.get("full_page").and_then(|v| v.as_bool()).unwrap_or(false);
-            let result = crate::cdp_browser::handle_browser_screenshot(full_page).await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            
-            if success {
-                if let Some(screenshot) = result.get("screenshot").and_then(|v| v.as_str()) {
-                    // Extract base64 data from data URL and determine mime type
-                    let (base64_data, mime_type) = if screenshot.starts_with("data:image/jpeg;base64,") {
-                        (&screenshot[23..], "image/jpeg")
-                    } else if screenshot.starts_with("data:image/png;base64,") {
-                        (&screenshot[22..], "image/png")
-                    } else {
-                        // Assume it's already raw base64 data (JPEG from our processor)
-                        (screenshot, "image/jpeg")
+        "redmine_test_connection" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
                     };
-                    
-                    json!({
-                        "content": [{
-                            "type": "image",
-                            "data": base64_data,
-                            "mimeType": mime_type
-                        }]
-                    })
-                } else {
-                    json!({
+                }
+            };
+            
+            if let Some(client) = guard.as_ref() {
+                match client.get_current_user().await {
+                    Ok(user) => json!({
                         "content": [{
                             "type": "text",
-                            "text": "Screenshot captured but data not available"
+                            "text": format!("Connection successful. Current user: {}", 
+                                user["user"]["login"].as_str().unwrap_or("unknown"))
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Connection test failed: {}", e)
                         }]
                     })
                 }
             } else {
-                let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Screenshot failed");
                 json!({
                     "content": [{
                         "type": "text",
-                        "text": error
+                        "text": "Redmine client not configured. Please run redmine_configure first."
                     }]
                 })
             }
         }
-        "browser_evaluate" => {
-            let script = arguments.get("script").and_then(|v| v.as_str()).unwrap_or("");
-            if script.is_empty() {
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": "Error: Script is required"
-                    }]
-                })
-            } else {
-                let result = crate::cdp_browser::handle_browser_evaluate(script).await;
-                let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-                
-                if success {
-                    let value = result.get("result")
-                        .map(|v| v.to_string())
-                        .unwrap_or_else(|| "undefined".to_string());
-                    json!({
-                        "content": [{
-                            "type": "text",
-                            "text": format!("Result: {}", value)
-                        }]
-                    })
-                } else {
-                    let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Evaluation failed");
-                    json!({
-                        "content": [{
-                            "type": "text",
-                            "text": error
-                        }]
-                    })
-                }
-            }
-        }
-        "browser_wait_for" => {
-            let selector = arguments.get("selector").and_then(|v| v.as_str()).unwrap_or("");
-            let timeout = arguments.get("timeout").and_then(|v| v.as_u64()).unwrap_or(30000);
-            if selector.is_empty() {
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": "Error: Selector is required"
-                    }]
-                })
-            } else {
-                let result = crate::cdp_browser::handle_browser_wait_for(selector, timeout).await;
-                let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-                let message = if success {
-                    result.get("message").and_then(|v| v.as_str()).unwrap_or("Element found")
-                } else {
-                    result.get("error").and_then(|v| v.as_str()).unwrap_or("Element not found")
-                };
-                
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": message
-                    }]
-                })
-            }
-        }
-        "browser_get_content" => {
-            let result = crate::cdp_browser::handle_browser_get_content().await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            
-            if success {
-                let content = result.get("content").and_then(|v| v.as_str()).unwrap_or("No content available");
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": content
-                    }]
-                })
-            } else {
-                let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to get content");
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": error
-                    }]
-                })
-            }
-        }
-        "browser_go_back" => {
-            let result = crate::cdp_browser::handle_browser_go_back().await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            let message = if success {
-                result.get("message").and_then(|v| v.as_str()).unwrap_or("Navigated back")
-            } else {
-                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to go back")
-            };
-            
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": message
-                }]
-            })
-        }
-        "browser_go_forward" => {
-            let result = crate::cdp_browser::handle_browser_go_forward().await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            let message = if success {
-                result.get("message").and_then(|v| v.as_str()).unwrap_or("Navigated forward")
-            } else {
-                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to go forward")
-            };
-            
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": message
-                }]
-            })
-        }
-        "browser_reload" => {
-            let result = crate::cdp_browser::handle_browser_reload().await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            let message = if success {
-                result.get("message").and_then(|v| v.as_str()).unwrap_or("Page reloaded")
-            } else {
-                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to reload")
-            };
-            
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": message
-                }]
-            })
-        }
-        "browser_close" => {
-            let result = crate::cdp_browser::handle_browser_close().await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            let message = if success {
-                result.get("message").and_then(|v| v.as_str()).unwrap_or("Browser closed")
-            } else {
-                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to close browser")
-            };
-            
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": message
-                }]
-            })
-        }
-        "browser_snapshot" => {
-            let result = crate::cdp_browser::handle_browser_snapshot().await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            
-            if success {
-                if let Some(snapshot) = result.get("snapshot") {
-                    let formatted = format!(
-                        "### Page Snapshot\n\n**URL**: {}\n**Title**: {}\n\n**Tabs**:\n{}\n\n**Recent Console Messages**:\n{}",
-                        snapshot.get("url").and_then(|v| v.as_str()).unwrap_or("N/A"),
-                        snapshot.get("title").and_then(|v| v.as_str()).unwrap_or("N/A"),
-                        snapshot.get("tabs").and_then(|v| v.as_array())
-                            .map(|tabs| tabs.iter()
-                                .map(|tab| format!("- [{}] {} - {} {}",
-                                    tab.get("index").and_then(|v| v.as_u64()).unwrap_or(0),
-                                    tab.get("title").and_then(|v| v.as_str()).unwrap_or(""),
-                                    tab.get("url").and_then(|v| v.as_str()).unwrap_or(""),
-                                    if tab.get("current").and_then(|v| v.as_bool()).unwrap_or(false) { "(current)" } else { "" }
-                                ))
-                                .collect::<Vec<_>>()
-                                .join("\n"))
-                            .unwrap_or_else(|| "None".to_string()),
-                        snapshot.get("console_messages").and_then(|v| v.as_array())
-                            .map(|msgs| if msgs.is_empty() {
-                                "None".to_string()
-                            } else {
-                                msgs.iter()
-                                    .map(|msg| format!("- [{}] {}",
-                                        msg.get("level").and_then(|v| v.as_str()).unwrap_or(""),
-                                        msg.get("text").and_then(|v| v.as_str()).unwrap_or("")
-                                    ))
-                                    .collect::<Vec<_>>()
-                                    .join("\n")
-                            })
-                            .unwrap_or_else(|| "None".to_string())
-                    );
-                    
-                    json!({
-                        "content": [{
-                            "type": "text",
-                            "text": formatted
-                        }]
-                    })
-                } else {
-                    json!({
-                        "content": [{
-                            "type": "text",
-                            "text": "Snapshot captured but no data available"
-                        }]
-                    })
-                }
-            } else {
-                let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Snapshot failed");
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": error
-                    }]
-                })
-            }
-        }
-        "browser_tab_list" => {
-            let result = crate::cdp_browser::handle_browser_tab_list().await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            
-            if success {
-                if let Some(tabs) = result.get("tabs").and_then(|v| v.as_array()) {
-                    let formatted = if tabs.is_empty() {
-                        "No open tabs".to_string()
-                    } else {
-                        let tab_list = tabs.iter()
-                            .map(|tab| format!("[{}] {} - {} {}",
-                                tab.get("index").and_then(|v| v.as_u64()).unwrap_or(0),
-                                tab.get("title").and_then(|v| v.as_str()).unwrap_or(""),
-                                tab.get("url").and_then(|v| v.as_str()).unwrap_or(""),
-                                if tab.get("current").and_then(|v| v.as_bool()).unwrap_or(false) { "(current)" } else { "" }
-                            ))
-                            .collect::<Vec<_>>()
-                            .join("\n");
-                        format!("Open tabs:\n{}", tab_list)
+        "redmine_list_issues" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
                     };
-                    
-                    json!({
+                }
+            };
+            
+            if let Some(client) = guard.as_ref() {
+                let mut params = HashMap::new();
+                if let Some(project_id) = arguments["project_id"].as_str() {
+                    params.insert("project_id".to_string(), project_id.to_string());
+                }
+                if let Some(assigned_to_id) = arguments["assigned_to_id"].as_str() {
+                    params.insert("assigned_to_id".to_string(), assigned_to_id.to_string());
+                }
+                if let Some(status_id) = arguments["status_id"].as_str() {
+                    params.insert("status_id".to_string(), status_id.to_string());
+                }
+                if let Some(limit) = arguments["limit"].as_u64() {
+                    params.insert("limit".to_string(), limit.to_string());
+                }
+                if let Some(offset) = arguments["offset"].as_u64() {
+                    params.insert("offset".to_string(), offset.to_string());
+                }
+                
+                match client.list_issues(params).await {
+                    Ok(issues) => json!({
                         "content": [{
                             "type": "text",
-                            "text": formatted
+                            "text": serde_json::to_string_pretty(&issues).unwrap_or("Failed to format issues".to_string())
                         }]
-                    })
-                } else {
-                    json!({
+                    }),
+                    Err(e) => json!({
                         "content": [{
                             "type": "text",
-                            "text": "No tabs information available"
+                            "text": format!("Failed to list issues: {}", e)
                         }]
                     })
                 }
             } else {
-                let error = result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to list tabs");
                 json!({
                     "content": [{
                         "type": "text",
-                        "text": error
+                        "text": "Redmine client not configured. Please run redmine_configure first."
                     }]
                 })
             }
         }
-        "browser_tab_switch" => {
-            let index = arguments.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let result = crate::cdp_browser::handle_browser_tab_switch(index).await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            let message = if success {
-                result.get("message").and_then(|v| v.as_str()).unwrap_or("Tab switched")
-            } else {
-                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to switch tab")
+        "redmine_get_issue" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
             };
             
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": message
-                }]
-            })
+            if let Some(client) = guard.as_ref() {
+                let id = arguments["id"].as_u64().unwrap_or(0) as u32;
+                
+                match client.get_issue(id).await {
+                    Ok(issue) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&issue).unwrap_or("Failed to format issue".to_string())
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to get issue: {}", e)
+                        }]
+                    })
+                }
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured. Please run redmine_configure first."
+                    }]
+                })
+            }
         }
-        "browser_tab_new" => {
-            let url = arguments.get("url").and_then(|v| v.as_str()).map(|s| s.to_string());
-            let result = crate::cdp_browser::handle_browser_tab_new(url).await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            let message = if success {
-                result.get("message").and_then(|v| v.as_str()).unwrap_or("New tab created")
-            } else {
-                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to create new tab")
+        "redmine_create_issue" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
             };
             
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": message
-                }]
-            })
+            if let Some(client) = guard.as_ref() {
+                match client.create_issue(arguments).await {
+                    Ok(issue) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Issue created successfully: {}", 
+                                serde_json::to_string_pretty(&issue).unwrap_or("Failed to format issue".to_string()))
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to create issue: {}", e)
+                        }]
+                    })
+                }
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured. Please run redmine_configure first."
+                    }]
+                })
+            }
         }
-        "browser_tab_close" => {
-            let index = arguments.get("index").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-            let result = crate::cdp_browser::handle_browser_tab_close(index).await;
-            let success = result.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
-            let message = if success {
-                result.get("message").and_then(|v| v.as_str()).unwrap_or("Tab closed")
-            } else {
-                result.get("error").and_then(|v| v.as_str()).unwrap_or("Failed to close tab")
+        "redmine_update_issue" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
             };
             
-            json!({
-                "content": [{
-                    "type": "text",
-                    "text": message
-                }]
-            })
+            if let Some(client) = guard.as_ref() {
+                let id = arguments["id"].as_u64().unwrap_or(0) as u32;
+                let mut update_data = arguments.clone();
+                update_data.as_object_mut().map(|obj| obj.remove("id"));
+                
+                match client.update_issue(id, update_data).await {
+                    Ok(_result) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Issue {} updated successfully", id)
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to update issue: {}", e)
+                        }]
+                    })
+                }
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured. Please run redmine_configure first."
+                    }]
+                })
+            }
+        }
+        "redmine_delete_issue" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            if let Some(client) = guard.as_ref() {
+                let id = arguments["issueNumber"].as_u64().unwrap_or(0) as u32;
+                
+                match client.delete_issue(id).await {
+                    Ok(_) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Issue {} deleted successfully", id)
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to delete issue: {}", e)
+                        }]
+                    })
+                }
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured. Please run redmine_configure first."
+                    }]
+                })
+            }
+        }
+        "redmine_list_projects" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            if let Some(client) = guard.as_ref() {
+                let mut params = std::collections::HashMap::new();
+                
+                // Add optional parameters
+                if let Some(limit) = arguments["limit"].as_u64() {
+                    params.insert("limit".to_string(), limit.to_string());
+                }
+                if let Some(offset) = arguments["offset"].as_u64() {
+                    params.insert("offset".to_string(), offset.to_string());
+                }
+                
+                match client.list_projects(params).await {
+                    Ok(projects) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&projects).unwrap_or("Failed to format projects".to_string())
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to list projects: {}", e)
+                        }]
+                    })
+                }
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured. Please run redmine_configure first."
+                    }]
+                })
+            }
+        }
+        "redmine_get_project" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            if let Some(client) = guard.as_ref() {
+                let id = arguments["id"].as_str().unwrap_or("");
+                
+                match client.get_project(id).await {
+                    Ok(project) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&project).unwrap_or("Failed to format project".to_string())
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to get project: {}", e)
+                        }]
+                    })
+                }
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured. Please run redmine_configure first."
+                    }]
+                })
+            }
+        }
+        "redmine_create_project" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            if let Some(client) = guard.as_ref() {
+                match client.create_project(arguments).await {
+                    Ok(project) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Project created successfully: {}", 
+                                serde_json::to_string_pretty(&project).unwrap_or("Failed to format project".to_string()))
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to create project: {}", e)
+                        }]
+                    })
+                }
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured. Please run redmine_configure first."
+                    }]
+                })
+            }
+        }
+        "redmine_list_users" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            if let Some(client) = guard.as_ref() {
+                let mut params = std::collections::HashMap::new();
+                
+                // Add optional parameters
+                if let Some(status) = arguments["status"].as_u64() {
+                    params.insert("status".to_string(), status.to_string());
+                }
+                if let Some(name) = arguments["name"].as_str() {
+                    params.insert("name".to_string(), name.to_string());
+                }
+                if let Some(limit) = arguments["limit"].as_u64() {
+                    params.insert("limit".to_string(), limit.to_string());
+                }
+                if let Some(offset) = arguments["offset"].as_u64() {
+                    params.insert("offset".to_string(), offset.to_string());
+                }
+                
+                match client.list_users(params).await {
+                    Ok(users) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&users).unwrap_or("Failed to format users".to_string())
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to list users: {}", e)
+                        }]
+                    })
+                }
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured. Please run redmine_configure first."
+                    }]
+                })
+            }
+        }
+        "redmine_get_current_user" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            if let Some(client) = guard.as_ref() {
+                match client.get_current_user().await {
+                    Ok(user) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&user).unwrap_or("Failed to format user".to_string())
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to get current user: {}", e)
+                        }]
+                    })
+                }
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured. Please run redmine_configure first."
+                    }]
+                })
+            }
+        }
+        "redmine_list_time_entries" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            if let Some(client) = guard.as_ref() {
+                let mut params = std::collections::HashMap::new();
+                
+                // Add optional parameters
+                if let Some(issue_id) = arguments["issue_id"].as_u64() {
+                    params.insert("issue_id".to_string(), issue_id.to_string());
+                }
+                if let Some(project_id) = arguments["project_id"].as_str() {
+                    params.insert("project_id".to_string(), project_id.to_string());
+                }
+                if let Some(user_id) = arguments["user_id"].as_u64() {
+                    params.insert("user_id".to_string(), user_id.to_string());
+                }
+                if let Some(from) = arguments["from"].as_str() {
+                    params.insert("from".to_string(), from.to_string());
+                }
+                if let Some(to) = arguments["to"].as_str() {
+                    params.insert("to".to_string(), to.to_string());
+                }
+                if let Some(limit) = arguments["limit"].as_u64() {
+                    params.insert("limit".to_string(), limit.to_string());
+                }
+                
+                match client.list_time_entries(params).await {
+                    Ok(entries) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&entries).unwrap_or("Failed to format time entries".to_string())
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to list time entries: {}", e)
+                        }]
+                    })
+                }
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured. Please run redmine_configure first."
+                    }]
+                })
+            }
+        }
+        "redmine_create_time_entry" => {
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            if let Some(client) = guard.as_ref() {
+                match client.create_time_entry(arguments).await {
+                    Ok(entry) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Time entry created successfully: {}", 
+                                serde_json::to_string_pretty(&entry).unwrap_or("Failed to format time entry".to_string()))
+                        }]
+                    }),
+                    Err(e) => json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to create time entry: {}", e)
+                        }]
+                    })
+                }
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured. Please run redmine_configure first."
+                    }]
+                })
+            }
         }
         _ => {
             json!({
@@ -1067,7 +1369,7 @@ async fn handle_tools_call(
             })
         }
     };
-    
+
     JsonRpcResponse {
         jsonrpc: "2.0".to_string(),
         id: request.id,
@@ -1075,8 +1377,6 @@ async fn handle_tools_call(
         error: None,
     }
 }
-
-
 
 // Start MCP server
 pub async fn start_mcp_server(state: Arc<McpServerState>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -1100,10 +1400,9 @@ pub async fn start_mcp_server(state: Arc<McpServerState>) -> Result<(), Box<dyn 
     *state.running.lock().await = true;
     
     // This will block until the server is stopped
-    let result = axum::serve(listener, router).await;
+    axum::serve(listener, router)
+        .await
+        .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)?;
     
-    // Mark server as stopped when serve() returns
-    *state.running.lock().await = false;
-    
-    result.map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+    Ok(())
 }

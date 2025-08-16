@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    cdp_mcp_lib::run()
+    redmine_mcp_lib::run()
 }
