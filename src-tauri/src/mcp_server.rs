@@ -14,7 +14,7 @@ use serde_json::{json, Value};
 // Import mcp-schema for type validation
 // We use custom types for simpler implementation but can validate against mcp-schema types
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     convert::Infallible,
     sync::Arc,
     time::{Duration, SystemTime},
@@ -90,6 +90,7 @@ pub struct McpServerState {
     pub sessions: Arc<RwLock<HashMap<String, Session>>>,
     pub port: u16,
     pub running: Arc<Mutex<bool>>,
+    pub enabled_tools: Arc<RwLock<Vec<String>>>,
 }
 
 impl McpServerState {
@@ -98,6 +99,16 @@ impl McpServerState {
             sessions: Arc::new(RwLock::new(HashMap::new())),
             port,
             running: Arc::new(Mutex::new(false)),
+            enabled_tools: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+    
+    pub fn new_with_tools(port: u16, enabled_tools: Vec<String>) -> Self {
+        Self {
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            port,
+            running: Arc::new(Mutex::new(false)),
+            enabled_tools: Arc::new(RwLock::new(enabled_tools)),
         }
     }
 }
@@ -234,14 +245,12 @@ async fn handle_initialize(
     // For streamable HTTP, use default session
     let session_id = "default".to_string();
 
-    // Create new session with Redmine tools
-    let session = Session {
-        id: session_id.clone(),
-        initialized: true,
-        created_at: SystemTime::now(),
-        last_activity: SystemTime::now(),
-        last_event_id: 0,
-        tools: vec![
+    // Get enabled tools list
+    let enabled_tools = state.enabled_tools.read().await;
+    let enabled_tools_set: std::collections::HashSet<_> = enabled_tools.iter().cloned().collect();
+    
+    // Define all available tools
+    let all_tools = vec![
             // Redmine configuration
             Tool {
                 name: "redmine_configure".to_string(),
@@ -599,7 +608,26 @@ async fn handle_initialize(
                     "required": ["hours"]
                 }),
             },
-        ],
+        ];
+    
+    // Filter tools based on enabled list
+    let filtered_tools: Vec<Tool> = if enabled_tools.is_empty() {
+        // If no tools specified, include all tools
+        all_tools
+    } else {
+        // Include only enabled tools
+        all_tools.into_iter()
+            .filter(|tool| enabled_tools_set.contains(&tool.name))
+            .collect()
+    };
+    
+    let session = Session {
+        id: session_id.clone(),
+        initialized: true,
+        created_at: SystemTime::now(),
+        last_activity: SystemTime::now(),
+        last_event_id: 0,
+        tools: filtered_tools,
         resources: vec![],
     };
 

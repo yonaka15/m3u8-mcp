@@ -20,7 +20,11 @@ fn greet(name: &str) -> String {
 }
 
 #[tauri::command]
-async fn start_mcp_server(state: State<'_, Arc<Mutex<ServerHandle>>>, port: u16) -> Result<String, String> {
+async fn start_mcp_server(
+    state: State<'_, Arc<Mutex<ServerHandle>>>, 
+    port: u16,
+    enabled_tools: Vec<String>
+) -> Result<String, String> {
     // Validate port number (port 0 is not allowed for explicit binding)
     if port == 0 {
         return Err("Port number must be greater than 0".to_string());
@@ -54,8 +58,8 @@ async fn start_mcp_server(state: State<'_, Arc<Mutex<ServerHandle>>>, port: u16)
         }
     }
     
-    // Create new server state with specified port
-    let new_state = Arc::new(mcp_server::McpServerState::new(port));
+    // Create new server state with specified port and enabled tools
+    let new_state = Arc::new(mcp_server::McpServerState::new_with_tools(port, enabled_tools));
     
     // Update the stored state
     let mut state_lock = server_handle.state.lock().await;

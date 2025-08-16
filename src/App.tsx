@@ -15,6 +15,20 @@ function App() {
   >(null);
   const [language, setLanguage] = useState<Language>("en");
   
+  // Tool selection state
+  const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set([
+    "redmine_configure",
+    "redmine_test_connection",
+    "redmine_list_issues",
+    "redmine_get_issue",
+    "redmine_create_issue",
+    "redmine_update_issue",
+    "redmine_list_projects",
+    "redmine_get_project",
+    "redmine_list_users",
+    "redmine_get_current_user",
+  ]));
+  
   // Redmine configuration
   const [redmineHost, setRedmineHost] = useState<string>("");
   const [redmineApiKey, setRedmineApiKey] = useState<string>("");
@@ -173,8 +187,11 @@ function App() {
           return;
         }
         
-        // Start MCP server
-        await invoke<string>("start_mcp_server", { port });
+        // Start MCP server with selected tools
+        await invoke<string>("start_mcp_server", { 
+          port,
+          enabledTools: Array.from(selectedTools) 
+        });
         setMcpServerMessage(""); // Clear message since status indicator shows the running state
         setMcpServerRunning(true);
         setCurrentPort(port);
@@ -227,6 +244,34 @@ function App() {
   function toggleLanguage() {
     setLanguage(language === "en" ? "ja" : "en");
   }
+
+  // Tool categories for better organization
+  const toolCategories = {
+    basic: ["redmine_configure", "redmine_test_connection"],
+    issues: ["redmine_list_issues", "redmine_get_issue", "redmine_create_issue", "redmine_update_issue", "redmine_delete_issue"],
+    projects: ["redmine_list_projects", "redmine_get_project", "redmine_create_project"],
+    users: ["redmine_list_users", "redmine_get_current_user"],
+    timeEntries: ["redmine_list_time_entries", "redmine_create_time_entry"]
+  };
+
+  const toggleTool = (tool: string) => {
+    const newSelected = new Set(selectedTools);
+    if (newSelected.has(tool)) {
+      newSelected.delete(tool);
+    } else {
+      newSelected.add(tool);
+    }
+    setSelectedTools(newSelected);
+  };
+
+  const selectAll = () => {
+    const allTools = Object.values(toolCategories).flat();
+    setSelectedTools(new Set(allTools));
+  };
+
+  const deselectAll = () => {
+    setSelectedTools(new Set());
+  };
 
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
@@ -298,11 +343,11 @@ function App() {
                       testingConnection || !redmineHost || !redmineApiKey
                         ? "bg-gray-400 cursor-not-allowed text-gray-200"
                         : redmineConfigured
-                          ? "bg-green-500 hover:bg-green-600 text-white"
+                          ? "bg-gray-500 hover:bg-gray-600 text-white"
                           : "bg-blue-500 hover:bg-blue-600 text-white"
                     }`}
                   >
-                    {testingConnection ? "Testing..." : redmineConfigured ? "✓ Connection Verified" : "Test Connection"}
+                    {testingConnection ? "Testing..." : "Check Connection"}
                   </button>
                   {redmineConfigured && (
                     <span className="text-green-600 dark:text-green-400 font-medium">
@@ -310,6 +355,63 @@ function App() {
                     </span>
                   )}
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Tool Selection Section */}
+          {!mcpServerRunning && redmineConfigured && (
+            <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-700">
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                  {t.selectTools}
+                </h2>
+                <div className="flex gap-2">
+                  <button
+                    onClick={selectAll}
+                    className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+                  >
+                    {t.selectAll}
+                  </button>
+                  <button
+                    onClick={deselectAll}
+                    className="px-3 py-1 text-sm bg-gray-500 hover:bg-gray-600 text-white rounded transition-colors"
+                  >
+                    {t.deselectAll}
+                  </button>
+                </div>
+              </div>
+              
+              <div className="space-y-4">
+                {Object.entries(toolCategories).map(([category, tools]) => (
+                  <div key={category} className="border-l-4 border-blue-400 pl-4">
+                    <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
+                      {t.toolCategories[category as keyof typeof t.toolCategories]}
+                    </h3>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {tools.map(tool => (
+                        <label
+                          key={tool}
+                          className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/30 p-1 rounded"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedTools.has(tool)}
+                            onChange={() => toggleTool(tool)}
+                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                          />
+                          <span className="text-sm text-gray-700 dark:text-gray-300">
+                            {t.tools[tool as keyof typeof t.tools]}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              
+              <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
+                Selected: {selectedTools.size} / {Object.values(toolCategories).flat().length} tools
               </div>
             </div>
           )}
@@ -431,7 +533,7 @@ function App() {
                         : "border-gray-300 dark:border-gray-600 focus:ring-blue-500"
               } focus:outline-none focus:ring-2 transition-colors`}
             />
-            {!mcpServerRunning && !mcpServerMessage && (
+            {!mcpServerRunning && (
               <span
                 className={`text-sm ${
                   checkingPort

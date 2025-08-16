@@ -20,6 +20,32 @@ export const translations = {
     copy: "Copy",
     copied: "✓ Copied",
     error: "Error:",
+    selectTools: "Select Tools to Enable:",
+    toolCategories: {
+      basic: "Basic",
+      issues: "Issues",
+      projects: "Projects",
+      users: "Users",
+      timeEntries: "Time Entries"
+    },
+    tools: {
+      redmine_configure: "Configure Connection",
+      redmine_test_connection: "Test Connection",
+      redmine_list_issues: "List Issues",
+      redmine_get_issue: "Get Issue",
+      redmine_create_issue: "Create Issue",
+      redmine_update_issue: "Update Issue",
+      redmine_delete_issue: "Delete Issue",
+      redmine_list_projects: "List Projects",
+      redmine_get_project: "Get Project",
+      redmine_create_project: "Create Project",
+      redmine_list_users: "List Users",
+      redmine_get_current_user: "Get Current User",
+      redmine_list_time_entries: "List Time Entries",
+      redmine_create_time_entry: "Create Time Entry"
+    },
+    selectAll: "Select All",
+    deselectAll: "Deselect All",
   },
   ja: {
     title: "CDP-MCP サーバー管理",
@@ -42,6 +68,32 @@ export const translations = {
     copy: "コピー",
     copied: "✓ コピー済み",
     error: "エラー:",
+    selectTools: "有効にするツールを選択:",
+    toolCategories: {
+      basic: "基本",
+      issues: "イシュー",
+      projects: "プロジェクト",
+      users: "ユーザー",
+      timeEntries: "タイムエントリー"
+    },
+    tools: {
+      redmine_configure: "接続設定",
+      redmine_test_connection: "接続テスト",
+      redmine_list_issues: "イシュー一覧",
+      redmine_get_issue: "イシュー取得",
+      redmine_create_issue: "イシュー作成",
+      redmine_update_issue: "イシュー更新",
+      redmine_delete_issue: "イシュー削除",
+      redmine_list_projects: "プロジェクト一覧",
+      redmine_get_project: "プロジェクト取得",
+      redmine_create_project: "プロジェクト作成",
+      redmine_list_users: "ユーザー一覧",
+      redmine_get_current_user: "現在のユーザー取得",
+      redmine_list_time_entries: "タイムエントリー一覧",
+      redmine_create_time_entry: "タイムエントリー作成"
+    },
+    selectAll: "すべて選択",
+    deselectAll: "すべて解除",
   },
 } as const;
 
