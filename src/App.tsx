@@ -17,12 +17,8 @@ function App() {
   
   // Tool selection state
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set([
-    "redmine_configure",
-    "redmine_test_connection",
     "redmine_list_issues",
     "redmine_get_issue",
-    "redmine_create_issue",
-    "redmine_update_issue",
     "redmine_list_projects",
     "redmine_get_project",
     "redmine_list_users",
@@ -247,7 +243,6 @@ function App() {
 
   // Tool categories for better organization
   const toolCategories = {
-    basic: ["redmine_configure", "redmine_test_connection"],
     issues: ["redmine_list_issues", "redmine_get_issue", "redmine_create_issue", "redmine_update_issue", "redmine_delete_issue"],
     projects: ["redmine_list_projects", "redmine_get_project", "redmine_create_project"],
     users: ["redmine_list_users", "redmine_get_current_user"],

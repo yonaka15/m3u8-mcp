@@ -23,15 +23,12 @@ export const translations = {
     selectTools: "Select Tools to Enable:",
     enabledTools: "Enabled Tools:",
     toolCategories: {
-      basic: "Basic",
       issues: "Issues",
       projects: "Projects",
       users: "Users",
       timeEntries: "Time Entries"
     },
     tools: {
-      redmine_configure: "Configure Connection",
-      redmine_test_connection: "Test Connection",
       redmine_list_issues: "List Issues",
       redmine_get_issue: "Get Issue",
       redmine_create_issue: "Create Issue",
@@ -72,15 +69,12 @@ export const translations = {
     selectTools: "有効にするツールを選択:",
     enabledTools: "有効なツール:",
     toolCategories: {
-      basic: "基本",
       issues: "イシュー",
       projects: "プロジェクト",
       users: "ユーザー",
       timeEntries: "タイムエントリー"
     },
     tools: {
-      redmine_configure: "接続設定",
-      redmine_test_connection: "接続テスト",
       redmine_list_issues: "イシュー一覧",
       redmine_get_issue: "イシュー取得",
       redmine_create_issue: "イシュー作成",

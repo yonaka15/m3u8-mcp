@@ -251,33 +251,6 @@ async fn handle_initialize(
     
     // Define all available tools
     let all_tools = vec![
-            // Redmine configuration
-            Tool {
-                name: "redmine_configure".to_string(),
-                description: Some("Configure Redmine connection".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {
-                        "host": {
-                            "type": "string",
-                            "description": "Redmine server URL (e.g., https://redmine.example.com)"
-                        },
-                        "api_key": {
-                            "type": "string",
-                            "description": "Redmine API key"
-                        }
-                    },
-                    "required": ["host", "api_key"]
-                }),
-            },
-            Tool {
-                name: "redmine_test_connection".to_string(),
-                description: Some("Test Redmine connection".to_string()),
-                input_schema: json!({
-                    "type": "object",
-                    "properties": {}
-                }),
-            },
             // Issue management
             Tool {
                 name: "redmine_list_issues".to_string(),
@@ -744,68 +717,6 @@ async fn handle_tool_call(
 
     // Execute tool based on name
     let result = match tool_name {
-        "redmine_configure" => {
-            let host = arguments["host"].as_str().unwrap_or("");
-            let api_key = arguments["api_key"].as_str().unwrap_or("");
-            
-            match crate::redmine_client::init_client(host.to_string(), api_key.to_string()).await {
-                Ok(_) => json!({
-                    "content": [{
-                        "type": "text",
-                        "text": format!("Redmine configured successfully for {}", host)
-                    }]
-                }),
-                Err(e) => json!({
-                    "content": [{
-                        "type": "text",
-                        "text": format!("Failed to configure Redmine: {}", e)
-                    }]
-                })
-            }
-        }
-        "redmine_test_connection" => {
-            let guard = match crate::redmine_client::get_client().await {
-                Ok(g) => g,
-                Err(e) => {
-                    return JsonRpcResponse {
-                        jsonrpc: "2.0".to_string(),
-                        id: request.id,
-                        result: Some(json!({
-                            "content": [{
-                                "type": "text",
-                                "text": format!("Failed to get Redmine client: {}", e)
-                            }]
-                        })),
-                        error: None,
-                    };
-                }
-            };
-            
-            if let Some(client) = guard.as_ref() {
-                match client.get_current_user().await {
-                    Ok(user) => json!({
-                        "content": [{
-                            "type": "text",
-                            "text": format!("Connection successful. Current user: {}", 
-                                user["user"]["login"].as_str().unwrap_or("unknown"))
-                        }]
-                    }),
-                    Err(e) => json!({
-                        "content": [{
-                            "type": "text",
-                            "text": format!("Connection test failed: {}", e)
-                        }]
-                    })
-                }
-            } else {
-                json!({
-                    "content": [{
-                        "type": "text",
-                        "text": "Redmine client not configured. Please run redmine_configure first."
-                    }]
-                })
-            }
-        }
         "redmine_list_issues" => {
             let guard = match crate::redmine_client::get_client().await {
                 Ok(g) => g,
