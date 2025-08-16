@@ -10,6 +10,8 @@ The Redmine MCP dashboard provides an intuitive interface for managing your MCP 
 
 - **MCP Server**: Streamable HTTP server using Axum on configurable port (default: 37650)
 - **Redmine Integration**: Full access to Redmine API for issues, projects, users, and time tracking
+- **Journal Support**: Complete issue history tracking with comments and field changes
+- **Persistent Configuration**: Securely stores Redmine settings locally (~/.redmine-mcp/config.json)
 - **Secure Configuration**: API key authentication with connection testing
 - **Cross-Platform**: Works on macOS, Windows, and Linux
 - **Modern UI**: React-based interface with Tailwind CSS styling
@@ -115,10 +117,13 @@ List Redmine issues with filtering options.
 - `offset` (number): Pagination offset
 
 #### redmine_get_issue
-Get a specific issue by ID.
+Get a specific issue by ID with full journal history.
 
 **Parameters:**
 - `id` (number, required): Issue ID
+
+**Returns:**
+- Issue details including attachments and journals (comments/history)
 
 #### redmine_create_issue
 Create a new issue.
@@ -153,7 +158,7 @@ Update an existing issue.
 Delete an issue.
 
 **Parameters:**
-- `id` (number, required): Issue ID
+- `issueNumber` (number, required): Issue ID
 
 ### Project Management
 
