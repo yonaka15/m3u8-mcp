@@ -360,26 +360,28 @@ function App() {
           )}
 
           {/* Tool Selection Section */}
-          {!mcpServerRunning && redmineConfigured && (
+          {redmineConfigured && (
             <div className="mb-6 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-700">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                  {t.selectTools}
+                  {mcpServerRunning ? t.enabledTools : t.selectTools}
                 </h2>
-                <div className="flex gap-2">
-                  <button
-                    onClick={selectAll}
-                    className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
-                  >
-                    {t.selectAll}
-                  </button>
-                  <button
-                    onClick={deselectAll}
-                    className="px-3 py-1 text-sm bg-gray-500 hover:bg-gray-600 text-white rounded transition-colors"
-                  >
-                    {t.deselectAll}
-                  </button>
-                </div>
+                {!mcpServerRunning && (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={selectAll}
+                      className="px-3 py-1 text-sm bg-blue-500 hover:bg-blue-600 text-white rounded transition-colors"
+                    >
+                      {t.selectAll}
+                    </button>
+                    <button
+                      onClick={deselectAll}
+                      className="px-3 py-1 text-sm bg-gray-500 hover:bg-gray-600 text-white rounded transition-colors"
+                    >
+                      {t.deselectAll}
+                    </button>
+                  </div>
+                )}
               </div>
               
               <div className="space-y-4">
@@ -392,13 +394,22 @@ function App() {
                       {tools.map(tool => (
                         <label
                           key={tool}
-                          className="flex items-center space-x-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/30 p-1 rounded"
+                          className={`flex items-center space-x-2 p-1 rounded ${
+                            mcpServerRunning 
+                              ? "cursor-not-allowed opacity-60" 
+                              : "cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/30"
+                          }`}
                         >
                           <input
                             type="checkbox"
                             checked={selectedTools.has(tool)}
                             onChange={() => toggleTool(tool)}
-                            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                            disabled={mcpServerRunning}
+                            className={`w-4 h-4 rounded focus:ring-2 ${
+                              mcpServerRunning
+                                ? "text-gray-400 bg-gray-200 border-gray-300 cursor-not-allowed dark:bg-gray-600 dark:border-gray-500"
+                                : "text-blue-600 bg-gray-100 border-gray-300 focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 dark:bg-gray-700 dark:border-gray-600"
+                            }`}
                           />
                           <span className="text-sm text-gray-700 dark:text-gray-300">
                             {t.tools[tool as keyof typeof t.tools]}
@@ -411,7 +422,10 @@ function App() {
               </div>
               
               <div className="mt-4 text-sm text-gray-600 dark:text-gray-400">
-                Selected: {selectedTools.size} / {Object.values(toolCategories).flat().length} tools
+                {mcpServerRunning 
+                  ? `Enabled: ${selectedTools.size} / ${Object.values(toolCategories).flat().length} tools`
+                  : `Selected: ${selectedTools.size} / ${Object.values(toolCategories).flat().length} tools`
+                }
               </div>
             </div>
           )}

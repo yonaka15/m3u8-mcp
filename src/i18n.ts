@@ -21,6 +21,7 @@ export const translations = {
     copied: "✓ Copied",
     error: "Error:",
     selectTools: "Select Tools to Enable:",
+    enabledTools: "Enabled Tools:",
     toolCategories: {
       basic: "Basic",
       issues: "Issues",
@@ -69,6 +70,7 @@ export const translations = {
     copied: "✓ コピー済み",
     error: "エラー:",
     selectTools: "有効にするツールを選択:",
+    enabledTools: "有効なツール:",
     toolCategories: {
       basic: "基本",
       issues: "イシュー",
