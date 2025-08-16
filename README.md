@@ -8,7 +8,7 @@ The CDP-MCP dashboard provides an intuitive interface for managing your MCP serv
 
 ## 🚀 Features
 
-- **MCP Server**: Runs a Model Context Protocol server on configurable port (default: 37650)
+- **MCP Server**: Streamable HTTP server using Axum on configurable port (default: 37650)
 - **Browser Automation**: Control browsers programmatically via Chrome DevTools Protocol
 - **Headless/Headful Mode**: Run browser in background (headless) or with visible window
 - **Cross-Platform**: Works on macOS, Windows, and Linux
@@ -45,24 +45,31 @@ npm run tauri dev
 
 ## 🎮 Usage
 
-### Starting the Application
+### Running as MCP Server
 
-1. Run the application in development mode:
+The application runs as an MCP Streamable HTTP server using Axum:
 
 ```bash
-npm run tauri dev
+cargo run --release --manifest-path src-tauri/Cargo.toml
 ```
 
-2. Click the "Run MCP Server" button in the UI to start the MCP server on port 37650
+The server runs on port 37650 and provides:
+- HTTP POST endpoint for JSON-RPC 2.0 requests
+- HTTP GET endpoint for Server-Sent Events (SSE) streaming
+- Session management via Mcp-Session-Id header
 
-### Using the MCP Server
+### Connect with Claude Desktop
 
-The MCP server implements the Streamable HTTP Transport protocol (2025-03-26 specification) and can be accessed by any MCP-compatible client.
+Add to your Claude Desktop configuration:
 
-#### Connect with Claude Code:
-
-```bash
-claude mcp add --transport http browser-automation http://localhost:37650/mcp
+```json
+{
+  "mcpServers": {
+    "browser-automation": {
+      "url": "http://localhost:37650"
+    }
+  }
+}
 ```
 
 ### Browser Mode Configuration
@@ -91,41 +98,6 @@ await browser_type({ selector: "input", text: "Hello" });
 await browser_close();
 ```
 
-#### Initialize a session:
-
-```bash
-curl -X POST http://localhost:37650/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}'
-```
-
-#### List available tools:
-
-```bash
-curl -X POST http://localhost:37650/mcp \
-  -H "Content-Type: application/json" \
-  -H "Mcp-Session-Id: YOUR_SESSION_ID" \
-  -d '{"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}'
-```
-
-#### Open a URL in browser:
-
-```bash
-curl -X POST http://localhost:37650/mcp \
-  -H "Content-Type: application/json" \
-  -H "Mcp-Session-Id: YOUR_SESSION_ID" \
-  -d '{
-    "jsonrpc": "2.0",
-    "id": 3,
-    "method": "tools/call",
-    "params": {
-      "name": "browser_navigate",
-      "arguments": {
-        "url": "https://www.google.com"
-      }
-    }
-  }'
-```
 
 ## 🔧 Available MCP Tools
 
@@ -265,14 +237,18 @@ Closes a specific browser tab.
 
 - **Rust** - Core backend language
 - **Tauri v2** - Desktop application framework
-- **Axum** - Web framework for MCP server
+- **Axum** - Web framework for MCP Streamable HTTP server
+- **Chromiumoxide** - Chrome DevTools Protocol client
 - **Tokio** - Async runtime
+- **Tower-http** - CORS and middleware support
+- **Image crate** - Image processing (JPEG compression)
 
 ### Protocol
 
-- **MCP Streamable HTTP Transport** - Communication protocol
+- **MCP Streamable HTTP** - HTTP/SSE transport with Axum
 - **JSON-RPC 2.0** - Message format
-- **Server-Sent Events (SSE)** - Real-time streaming
+- **Server-Sent Events (SSE)** - Real-time server-to-client streaming
+- **Chrome DevTools Protocol** - Browser control protocol
 
 ## 📁 Project Structure
 
@@ -285,8 +261,10 @@ cdp-mcp/
 ├── src-tauri/               # Rust backend
 │   ├── src/
 │   │   ├── lib.rs           # Tauri commands and server lifecycle
-│   │   ├── mcp_server.rs    # MCP server implementation
-│   │   └── cdp_browser.rs   # Chrome DevTools Protocol integration
+│   │   ├── mcp_server.rs    # MCP Streamable HTTP server (Axum)
+│   │   ├── cdp_browser.rs   # Chrome DevTools Protocol integration
+│   │   ├── image_processor.rs # Rust image processing for screenshots
+│   │   └── config.rs        # Configuration management
 │   ├── Cargo.toml           # Rust dependencies
 │   └── tauri.conf.json      # Tauri configuration
 ├── .claude/                 # Claude AI documentation
@@ -353,17 +331,17 @@ These benefits make CDP-MCP more reliable and performant than JavaScript or Pyth
 
 ## 🚧 Roadmap
 
-- [x] Basic MCP server implementation
-- [x] Browser navigation tool
-- [x] Session management
-- [x] UI controls for server
-- [ ] Advanced browser automation tools
-  - [ ] Click elements
-  - [ ] Type text
-  - [ ] Take screenshots
-  - [ ] Execute JavaScript
+- [x] MCP Streamable HTTP server with Axum
+- [x] Chrome DevTools Protocol integration
+- [x] Full browser automation suite (17 tools)
+- [x] Screenshot capture with JPEG compression
+- [x] Tab management
+- [x] Pure Rust implementation
+- [x] Window size optimization (800x600)
 - [ ] Chrome extension integration
 - [ ] Recording and playback of browser actions
+- [ ] Browser profile management
+- [ ] Cookie management
 
 ## 🤝 Contributing
 
@@ -393,4 +371,4 @@ For issues and questions:
 
 ---
 
-**Note**: This is an MVP (Minimum Viable Product) implementation. Advanced browser automation features are planned for future releases.
+**Note**: The application supports both connecting to existing Chrome instances with debug port or launching new instances automatically.
