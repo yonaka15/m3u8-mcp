@@ -21,6 +21,8 @@ The Redmine MCP dashboard provides an intuitive interface for managing your MCP 
 - **Tool Categories**: Tools organized into logical groups (Issues, Projects, Users, Time Entries)
 - **Safety First**: Create and Update operations disabled by default
 - **Visual Feedback**: See enabled tools even when server is running
+- **Local SQLite Cache**: Store Redmine data locally for offline access and performance
+- **Cache Management**: View statistics, refresh data, and manage cache lifecycle
 - **Internationalization**: Full English and Japanese language support
 - **Modern UI**: React-based interface with Tailwind CSS v4 styling
 
@@ -80,6 +82,29 @@ The application now provides granular control over which tools are exposed throu
 - **Time Entries**: List, Create
 
 *Create and Update issue operations are disabled by default for safety.
+
+### Local Cache Management
+
+The application now includes a powerful SQLite-based local cache system:
+
+#### Cache Features
+- **Automatic Database Initialization**: SQLite database is created automatically on first launch
+- **Data Caching**: Store issues, projects, users, and time entries locally
+- **Cache Statistics**: View real-time statistics of cached items
+- **Cache Refresh**: Update cache with latest data from Redmine
+- **Cache Cleanup**: Clear all cache or remove old entries
+
+#### Cache Location
+The SQLite database is stored at:
+- **macOS/Linux**: `~/.redmine-mcp/cache.db`
+- **Windows**: `%USERPROFILE%\.redmine-mcp\cache.db`
+
+#### Cache Operations
+- **Cache Issues**: Fetch and store issues from Redmine
+- **Cache Projects**: Fetch and store project data
+- **View Statistics**: See count of cached items by type
+- **Clear Cache**: Remove all cached data
+- **Clear Old Cache**: Remove entries older than specified days
 
 ### Running as MCP Server
 
@@ -263,6 +288,7 @@ Create a time entry.
 - **Tauri v2** - Desktop application framework
 - **Axum** - Web framework for MCP Streamable HTTP server
 - **Reqwest** - HTTP client for Redmine API
+- **Rusqlite** - SQLite database for local caching
 - **Tokio** - Async runtime
 - **Tower-http** - CORS and middleware support
 
@@ -346,6 +372,9 @@ The MCP server has been tested with:
 - User queries ✅
 - Time tracking ✅
 - Tool selection and filtering ✅
+- SQLite database initialization ✅
+- Cache operations (store/retrieve/clear) ✅
+- Cache statistics ✅
 - Internationalization ✅
 
 ## 🦀 Why Rust?
@@ -382,7 +411,10 @@ Redmine MCP leverages Rust's unique advantages:
 - [x] Secure API key configuration
 - [x] Connection testing
 - [x] Tool selection UI
+- [x] Local SQLite cache
+- [x] Cache management UI
 - [x] Internationalization (EN/JP)
+- [ ] Offline mode using cached data
 - [ ] Wiki page management
 - [ ] File attachment support
 - [ ] Custom field support
@@ -391,6 +423,8 @@ Redmine MCP leverages Rust's unique advantages:
 - [ ] Activity feeds
 - [ ] Saved queries support
 - [ ] Advanced filtering UI
+- [ ] Cache synchronization strategies
+- [ ] Export cached data to various formats
 
 ## 🤝 Contributing
 

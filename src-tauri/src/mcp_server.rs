@@ -247,7 +247,7 @@ async fn handle_initialize(
 
     // Get enabled tools list
     let enabled_tools = state.enabled_tools.read().await;
-    let enabled_tools_set: std::collections::HashSet<_> = enabled_tools.iter().cloned().collect();
+    let enabled_tools_set: HashSet<_> = enabled_tools.iter().cloned().collect();
     
     // Define all available tools
     let all_tools = vec![
@@ -579,6 +579,67 @@ async fn handle_initialize(
                         }
                     },
                     "required": ["hours"]
+                }),
+            },
+            // Cache management tools
+            Tool {
+                name: "redmine_download_all_issues".to_string(),
+                description: Some("Download all issues from Redmine and cache them locally".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            Tool {
+                name: "redmine_search_cached_issues".to_string(),
+                description: Some("Search locally cached issues with full-text search".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query for full-text search in subject and description"
+                        },
+                        "project_id": {
+                            "type": "number",
+                            "description": "Filter by project ID"
+                        },
+                        "status_id": {
+                            "type": "number",
+                            "description": "Filter by status ID"
+                        },
+                        "assigned_to_id": {
+                            "type": "number",
+                            "description": "Filter by assignee ID"
+                        },
+                        "limit": {
+                            "type": "number",
+                            "description": "Maximum number of results per page",
+                            "default": 100
+                        },
+                        "offset": {
+                            "type": "number",
+                            "description": "Number of results to skip for pagination",
+                            "default": 0
+                        }
+                    },
+                    "required": ["query"]
+                }),
+            },
+            Tool {
+                name: "redmine_get_cache_stats".to_string(),
+                description: Some("Get statistics about locally cached data".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
+                }),
+            },
+            Tool {
+                name: "redmine_clear_cache".to_string(),
+                description: Some("Clear all locally cached data".to_string()),
+                input_schema: json!({
+                    "type": "object",
+                    "properties": {}
                 }),
             },
         ];
@@ -1297,6 +1358,334 @@ async fn handle_tool_call(
                         "text": "Redmine client not configured. Please run redmine_configure first."
                     }]
                 })
+            }
+        }
+        "redmine_download_all_issues" => {
+            // Initialize database if needed
+            let db_path = dirs::home_dir()
+                .map(|h| h.join(".redmine-mcp").join("cache.db"))
+                .ok_or("Failed to get home directory")
+                .unwrap();
+            
+            let db = match crate::database::Database::new(db_path) {
+                Ok(database) => database,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to initialize database: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            let guard = match crate::redmine_client::get_client().await {
+                Ok(g) => g,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to get Redmine client: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            if let Some(client) = guard.as_ref() {
+                let mut total_cached = 0;
+                let mut offset = 0;
+                const LIMIT: usize = 100;
+                let now = chrono::Utc::now();
+                
+                loop {
+                    let mut params = std::collections::HashMap::new();
+                    params.insert("limit".to_string(), LIMIT.to_string());
+                    params.insert("offset".to_string(), offset.to_string());
+                    params.insert("status_id".to_string(), "*".to_string());
+                    
+                    match client.list_issues(params).await {
+                        Ok(issues_json) => {
+                            if let Some(issues_array) = issues_json.get("issues").and_then(|v| v.as_array()) {
+                                if issues_array.is_empty() {
+                                    break;
+                                }
+                                
+                                for issue in issues_array {
+                                    let cached_issue = crate::database::CachedIssue {
+                                        id: issue.get("id").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
+                                        project_id: issue.get("project")
+                                            .and_then(|p| p.get("id"))
+                                            .and_then(|v| v.as_i64())
+                                            .unwrap_or(0) as i32,
+                                        project_name: issue.get("project")
+                                            .and_then(|p| p.get("name"))
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        subject: issue.get("subject")
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        description: issue.get("description")
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| s.to_string()),
+                                        status_id: issue.get("status")
+                                            .and_then(|s| s.get("id"))
+                                            .and_then(|v| v.as_i64())
+                                            .unwrap_or(0) as i32,
+                                        status_name: issue.get("status")
+                                            .and_then(|s| s.get("name"))
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        priority_id: issue.get("priority")
+                                            .and_then(|p| p.get("id"))
+                                            .and_then(|v| v.as_i64())
+                                            .unwrap_or(0) as i32,
+                                        priority_name: issue.get("priority")
+                                            .and_then(|p| p.get("name"))
+                                            .and_then(|v| v.as_str())
+                                            .unwrap_or("")
+                                            .to_string(),
+                                        assigned_to_id: issue.get("assigned_to")
+                                            .and_then(|a| a.get("id"))
+                                            .and_then(|v| v.as_i64())
+                                            .map(|id| id as i32),
+                                        assigned_to_name: issue.get("assigned_to")
+                                            .and_then(|a| a.get("name"))
+                                            .and_then(|v| v.as_str())
+                                            .map(|s| s.to_string()),
+                                        created_on: issue.get("created_on")
+                                            .and_then(|v| v.as_str())
+                                            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                                            .map(|dt| dt.with_timezone(&chrono::Utc))
+                                            .unwrap_or(now),
+                                        updated_on: issue.get("updated_on")
+                                            .and_then(|v| v.as_str())
+                                            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
+                                            .map(|dt| dt.with_timezone(&chrono::Utc))
+                                            .unwrap_or(now),
+                                        cached_at: now,
+                                    };
+                                    
+                                    if let Ok(_) = db.cache_issue(&cached_issue) {
+                                        total_cached += 1;
+                                    }
+                                }
+                                
+                                offset += issues_array.len();
+                            } else {
+                                break;
+                            }
+                        }
+                        Err(_e) => {
+                            // Stop downloading on error
+                            break;
+                        }
+                    }
+                }
+                
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": format!("Successfully downloaded and cached {} issues", total_cached)
+                    }]
+                })
+            } else {
+                json!({
+                    "content": [{
+                        "type": "text",
+                        "text": "Redmine client not configured"
+                    }]
+                })
+            }
+        }
+        "redmine_search_cached_issues" => {
+            let query = arguments.get("query")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            let project_id = arguments.get("project_id")
+                .and_then(|v| v.as_i64())
+                .map(|id| id as i32);
+            let status_id = arguments.get("status_id")
+                .and_then(|v| v.as_i64())
+                .map(|id| id as i32);
+            let assigned_to_id = arguments.get("assigned_to_id")
+                .and_then(|v| v.as_i64())
+                .map(|id| id as i32);
+            let limit = arguments.get("limit")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(100) as usize;
+            let offset = arguments.get("offset")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0) as usize;
+            
+            let db_path = dirs::home_dir()
+                .map(|h| h.join(".redmine-mcp").join("cache.db"))
+                .ok_or("Failed to get home directory")
+                .unwrap();
+            
+            let db = match crate::database::Database::new(db_path) {
+                Ok(database) => database,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to initialize database: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            match db.search_issues(&query, project_id, status_id, assigned_to_id, limit, offset) {
+                Ok(issues) => {
+                    let results_text = if issues.is_empty() {
+                        if offset > 0 {
+                            format!("No more matching issues (offset: {})", offset)
+                        } else {
+                            "No matching issues found".to_string()
+                        }
+                    } else {
+                        let mut text = format!("Found {} matching issues (offset: {}, limit: {}):\n\n", issues.len(), offset, limit);
+                        for issue in issues.iter().take(20) {
+                            text.push_str(&format!(
+                                "#{} - {} ({})\n  Project: {}\n  Status: {}\n  Assignee: {}\n\n",
+                                issue.id,
+                                issue.subject,
+                                issue.priority_name,
+                                issue.project_name,
+                                issue.status_name,
+                                issue.assigned_to_name.as_deref().unwrap_or("Unassigned")
+                            ));
+                        }
+                        if issues.len() > 20 {
+                            text.push_str(&format!("... and {} more issues", issues.len() - 20));
+                        }
+                        text
+                    };
+                    
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": results_text
+                        }]
+                    })
+                }
+                Err(e) => {
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to search issues: {}", e)
+                        }]
+                    })
+                }
+            }
+        }
+        "redmine_get_cache_stats" => {
+            let db_path = dirs::home_dir()
+                .map(|h| h.join(".redmine-mcp").join("cache.db"))
+                .ok_or("Failed to get home directory")
+                .unwrap();
+            
+            let db = match crate::database::Database::new(db_path) {
+                Ok(database) => database,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to initialize database: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            match db.get_cache_stats() {
+                Ok(stats) => {
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!(
+                                "Cache Statistics:\n- Issues: {}\n- Projects: {}\n- Users: {}\n- Time Entries: {}\n- Total: {}",
+                                stats.get("issues").and_then(|v| v.as_i64()).unwrap_or(0),
+                                stats.get("projects").and_then(|v| v.as_i64()).unwrap_or(0),
+                                stats.get("users").and_then(|v| v.as_i64()).unwrap_or(0),
+                                stats.get("time_entries").and_then(|v| v.as_i64()).unwrap_or(0),
+                                stats.get("total").and_then(|v| v.as_i64()).unwrap_or(0)
+                            )
+                        }]
+                    })
+                }
+                Err(e) => {
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to get cache stats: {}", e)
+                        }]
+                    })
+                }
+            }
+        }
+        "redmine_clear_cache" => {
+            let db_path = dirs::home_dir()
+                .map(|h| h.join(".redmine-mcp").join("cache.db"))
+                .ok_or("Failed to get home directory")
+                .unwrap();
+            
+            let db = match crate::database::Database::new(db_path) {
+                Ok(database) => database,
+                Err(e) => {
+                    return JsonRpcResponse {
+                        jsonrpc: "2.0".to_string(),
+                        id: request.id,
+                        result: Some(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": format!("Failed to initialize database: {}", e)
+                            }]
+                        })),
+                        error: None,
+                    };
+                }
+            };
+            
+            match db.clear_all_cache() {
+                Ok(_) => {
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": "Cache cleared successfully"
+                        }]
+                    })
+                }
+                Err(e) => {
+                    json!({
+                        "content": [{
+                            "type": "text",
+                            "text": format!("Failed to clear cache: {}", e)
+                        }]
+                    })
+                }
             }
         }
         _ => {

@@ -23,6 +23,10 @@ function App() {
     "redmine_get_project",
     "redmine_list_users",
     "redmine_get_current_user",
+    "redmine_download_all_issues",
+    "redmine_search_cached_issues",
+    "redmine_get_cache_stats",
+    "redmine_clear_cache",
   ]));
   
   // Redmine configuration
@@ -30,6 +34,23 @@ function App() {
   const [redmineApiKey, setRedmineApiKey] = useState<string>("");
   const [redmineConfigured, setRedmineConfigured] = useState(false);
   const [testingConnection, setTestingConnection] = useState(false);
+  const [previousRedmineHost, setPreviousRedmineHost] = useState<string>("");
+  const [previousRedmineApiKey, setPreviousRedmineApiKey] = useState<string>("");
+  
+  // Cache state
+  const [databaseInitialized, setDatabaseInitialized] = useState(false);
+  const [cacheStats, setCacheStats] = useState<{
+    issues: number;
+    projects: number;
+    users: number;
+    time_entries: number;
+    total: number;
+  } | null>(null);
+  const [cacheMessage, setCacheMessage] = useState<string>("");
+  
+  // Menu state
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [statsModalOpen, setStatsModalOpen] = useState(false);
 
   const t = translations[language];
 
@@ -37,11 +58,27 @@ function App() {
   useEffect(() => {
     checkMcpServerStatus();
     loadRedmineConfiguration();
+    initializeDatabase();
     const port = parseInt(portInput);
     if (!isNaN(port)) {
       checkPortAvailability(port);
     }
   }, []);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement;
+      if (menuOpen && !target.closest('.menu-container')) {
+        setMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('click', handleClickOutside);
+    return () => {
+      document.removeEventListener('click', handleClickOutside);
+    };
+  }, [menuOpen]);
 
   async function checkMcpServerStatus() {
     try {
@@ -66,6 +103,9 @@ function App() {
       if (config && config.host && config.api_key) {
         setRedmineHost(config.host);
         setRedmineApiKey(config.api_key);
+        // Save as previous configuration for change detection
+        setPreviousRedmineHost(config.host);
+        setPreviousRedmineApiKey(config.api_key);
         // Auto-test connection after loading
         setTestingConnection(true);
         try {
@@ -145,6 +185,22 @@ function App() {
     setMcpServerMessage("");
 
     try {
+      // Check if configuration has changed
+      const configChanged = previousRedmineHost !== "" && 
+                          (previousRedmineHost !== redmineHost || previousRedmineApiKey !== redmineApiKey);
+      
+      // If configuration changed, clear cache automatically
+      if (configChanged && databaseInitialized) {
+        try {
+          await invoke<string>("clear_cache");
+          console.log("Cache cleared due to Redmine configuration change");
+          // Refresh cache stats after clearing
+          await refreshCacheStats();
+        } catch (error) {
+          console.error("Failed to clear cache on config change:", error);
+        }
+      }
+
       // Configure Redmine client
       await invoke<string>("configure_redmine", {
         host: redmineHost,
@@ -155,6 +211,10 @@ function App() {
       const user = await invoke<any>("test_redmine_connection");
       setRedmineConfigured(true);
       setMcpServerMessage(`Connected to Redmine as: ${user.user?.login || "unknown"}`);
+      
+      // Save current configuration as previous for next comparison
+      setPreviousRedmineHost(redmineHost);
+      setPreviousRedmineApiKey(redmineApiKey);
     } catch (error) {
       setRedmineConfigured(false);
       setMcpServerMessage(`Failed to connect to Redmine: ${error}`);
@@ -241,9 +301,52 @@ function App() {
     setLanguage(language === "en" ? "ja" : "en");
   }
 
+  // Database and cache functions
+  async function initializeDatabase() {
+    try {
+      await invoke<string>("init_database");
+      setDatabaseInitialized(true);
+      await refreshCacheStats();
+    } catch (error) {
+      console.error("Failed to initialize database:", error);
+      setDatabaseInitialized(false);
+    }
+  }
+
+  async function refreshCacheStats() {
+    if (!databaseInitialized) return;
+    
+    try {
+      const stats = await invoke<{
+        issues: number;
+        projects: number;
+        users: number;
+        time_entries: number;
+        total: number;
+      }>("get_cache_stats");
+      setCacheStats(stats);
+    } catch (error) {
+      console.error("Failed to get cache stats:", error);
+    }
+  }
+
+
+  async function clearAllCache() {
+    try {
+      await invoke<string>("clear_cache");
+      setCacheMessage("Cache cleared successfully");
+      await refreshCacheStats();
+    } catch (error) {
+      setCacheMessage(`Failed to clear cache: ${error}`);
+    } finally {
+      setTimeout(() => setCacheMessage(""), 3000);
+    }
+  }
+
+
   // Tool categories for better organization
   const toolCategories = {
-    issues: ["redmine_list_issues", "redmine_get_issue", "redmine_create_issue", "redmine_update_issue", "redmine_delete_issue"],
+    issues: ["redmine_list_issues", "redmine_get_issue", "redmine_create_issue", "redmine_update_issue", "redmine_delete_issue", "redmine_download_all_issues", "redmine_search_cached_issues", "redmine_get_cache_stats", "redmine_clear_cache"],
     projects: ["redmine_list_projects", "redmine_get_project", "redmine_create_project"],
     users: ["redmine_list_users", "redmine_get_current_user"],
     timeEntries: ["redmine_list_time_entries", "redmine_create_time_entry"]
@@ -271,8 +374,51 @@ function App() {
   return (
     <main className="min-h-screen bg-gray-50 dark:bg-gray-900 py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-3xl mx-auto">
-        {/* Language Toggle Button */}
-        <div className="flex justify-end mb-4">
+        {/* Top bar with Menu and Language Toggle */}
+        <div className="flex justify-between mb-4">
+          {/* Menu Button */}
+          <div className="relative menu-container">
+            <button
+              onClick={() => setMenuOpen(!menuOpen)}
+              className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-md font-medium text-sm text-gray-700 dark:text-gray-300 transition-colors flex items-center gap-2"
+            >
+              {/* Hamburger icon */}
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+              {t.menu}
+            </button>
+            
+            {/* Dropdown Menu */}
+            {menuOpen && (
+              <div className="absolute left-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-xl border border-gray-200 dark:border-gray-700 z-50">
+                {/* Cache Actions */}
+                <div className="p-2">
+                  <button
+                    onClick={async () => {
+                      await refreshCacheStats();
+                      setStatsModalOpen(true);
+                      setMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700 text-sm text-gray-700 dark:text-gray-300"
+                  >
+                    {t.cache.viewStats}
+                  </button>
+                  <button
+                    onClick={async () => {
+                      await clearAllCache();
+                      setMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-sm text-red-600 dark:text-red-400 font-medium"
+                  >
+                    {t.cache.clearCache}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          {/* Language Toggle Button */}
           <button
             onClick={toggleLanguage}
             className="px-3 py-1.5 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-md font-medium text-sm text-gray-700 dark:text-gray-300 transition-colors"
@@ -424,6 +570,7 @@ function App() {
               </div>
             </div>
           )}
+
 
           {mcpServerRunning && currentPort && (
             <div className="mb-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
@@ -600,6 +747,78 @@ function App() {
             </p>
           )}
         </div>
+        
+        {/* Statistics Modal */}
+        {statsModalOpen && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+              {/* Modal Header */}
+              <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+                <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">
+                  {t.cache.stats}
+                </h2>
+                <button
+                  onClick={() => setStatsModalOpen(false)}
+                  className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                >
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              
+              {/* Modal Body */}
+              <div className="p-6">
+                {databaseInitialized && cacheStats ? (
+                  <>
+                    {/* Issues Statistics */}
+                    <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-8 text-center mb-6">
+                      <div className="text-5xl font-bold text-blue-600 dark:text-blue-400">
+                        {cacheStats.issues}
+                      </div>
+                      <div className="text-lg text-gray-600 dark:text-gray-400 mt-2">
+                        {t.cache.issues}
+                      </div>
+                    </div>
+                    
+                    {/* Actions */}
+                    <div className="flex justify-end gap-3">
+                      <button
+                        onClick={async () => {
+                          await refreshCacheStats();
+                        }}
+                        className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded-lg font-medium transition-colors"
+                      >
+                        {t.cache.refresh}
+                      </button>
+                      <button
+                        onClick={() => setStatsModalOpen(false)}
+                        className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors"
+                      >
+                        {t.cache.close}
+                      </button>
+                    </div>
+                    
+                    {/* Cache Message */}
+                    {cacheMessage && (
+                      <p className={`mt-4 text-sm text-center ${
+                        cacheMessage.includes("Failed") || cacheMessage.includes("error") 
+                          ? "text-red-600 dark:text-red-400" 
+                          : "text-green-600 dark:text-green-400"
+                      }`}>
+                        {cacheMessage}
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    {t.cache.databaseError || "Database not initialized"}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </main>
   );
