@@ -2,6 +2,8 @@
 
 Redmine MCP Server - A desktop application that provides Redmine API access through the Model Context Protocol (MCP), built with Tauri, React, and Rust.
 
+📝 **Development article**: [Read about the development journey and rationale on Qiita (Japanese)](https://qiita.com/yonaka15/items/6558b78d8e6a37205e1c)
+
 ![Redmine MCP Dashboard](./docs/images/redmine-mcp-dashboard.png)
 
 The Redmine MCP dashboard provides an intuitive interface for managing your MCP server. Configure your Redmine connection, select which tools to enable, and start the server for AI-powered Redmine interactions.
@@ -497,6 +499,7 @@ For issues and questions:
 
 - Open an issue on GitHub
 - Check the [CLAUDE.md](.claude/CLAUDE.md) file for detailed technical documentation
+- Read the [development notes on Qiita (Japanese)](https://qiita.com/yonaka15/items/6558b78d8e6a37205e1c)
 
 ---
 
