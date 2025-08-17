@@ -3,6 +3,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
+use std::time::Duration;
 
 // Redmine API Error
 #[derive(Debug)]
@@ -41,8 +42,14 @@ pub struct RedmineClient {
 
 impl RedmineClient {
     pub fn new(host: String, api_key: String) -> Self {
+        let client = Client::builder()
+            .timeout(Duration::from_secs(10))  // 10 second timeout
+            .connect_timeout(Duration::from_secs(5))  // 5 second connection timeout
+            .build()
+            .unwrap_or_else(|_| Client::new());
+            
         Self {
-            client: Client::new(),
+            client,
             config: RedmineConfig { host, api_key },
         }
     }

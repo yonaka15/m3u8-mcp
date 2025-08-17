@@ -184,6 +184,11 @@ function App() {
     setTestingConnection(true);
     setMcpServerMessage("");
 
+    // Set a timeout for the entire operation
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error("Connection timeout - please check the host URL")), 15000);
+    });
+
     try {
       // Check if configuration has changed
       const configChanged = previousRedmineHost !== "" && 
@@ -201,23 +206,39 @@ function App() {
         }
       }
 
-      // Configure Redmine client
-      await invoke<string>("configure_redmine", {
-        host: redmineHost,
-        apiKey: redmineApiKey,
-      });
+      // Race between the actual operation and timeout
+      const result = await Promise.race([
+        (async () => {
+          // Configure Redmine client
+          await invoke<string>("configure_redmine", {
+            host: redmineHost,
+            apiKey: redmineApiKey,
+          });
 
-      // Test connection
-      const user = await invoke<any>("test_redmine_connection");
+          // Test connection
+          return await invoke<any>("test_redmine_connection");
+        })(),
+        timeoutPromise
+      ]);
+
       setRedmineConfigured(true);
-      setMcpServerMessage(`Connected to Redmine as: ${user.user?.login || "unknown"}`);
+      setMcpServerMessage(`Connected to Redmine as: ${(result as any).user?.login || "unknown"}`);
       
       // Save current configuration as previous for next comparison
       setPreviousRedmineHost(redmineHost);
       setPreviousRedmineApiKey(redmineApiKey);
-    } catch (error) {
+    } catch (error: any) {
       setRedmineConfigured(false);
-      setMcpServerMessage(`Failed to connect to Redmine: ${error}`);
+      const errorMessage = error.toString();
+      if (errorMessage.includes("timeout")) {
+        setMcpServerMessage("Connection timeout - please check the host URL");
+      } else if (errorMessage.includes("Failed to connect") || errorMessage.includes("error sending request")) {
+        setMcpServerMessage("Failed to connect - please check the host URL");
+      } else if (errorMessage.includes("401") || errorMessage.includes("Unauthorized")) {
+        setMcpServerMessage("Invalid API key - please check your credentials");
+      } else {
+        setMcpServerMessage(`Failed to connect: ${errorMessage}`);
+      }
     } finally {
       setTestingConnection(false);
     }
@@ -453,7 +474,14 @@ function App() {
                     id="redmine-host"
                     type="text"
                     value={redmineHost}
-                    onChange={(e) => setRedmineHost(e.target.value)}
+                    onChange={(e) => {
+                      setRedmineHost(e.target.value);
+                      // Reset connection status when host changes
+                      if (redmineConfigured) {
+                        setRedmineConfigured(false);
+                        setMcpServerMessage("");
+                      }
+                    }}
                     placeholder="https://redmine.example.com"
                     className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
@@ -470,7 +498,14 @@ function App() {
                     id="redmine-api-key"
                     type="password"
                     value={redmineApiKey}
-                    onChange={(e) => setRedmineApiKey(e.target.value)}
+                    onChange={(e) => {
+                      setRedmineApiKey(e.target.value);
+                      // Reset connection status when API key changes
+                      if (redmineConfigured) {
+                        setRedmineConfigured(false);
+                        setMcpServerMessage("");
+                      }
+                    }}
                     placeholder="Your API key from Redmine account settings"
                     className="w-full px-3 py-2 rounded-md border border-gray-300 dark:border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none"
                   />
