@@ -4,18 +4,25 @@ Redmine MCP Server - A desktop application that provides Redmine API access thro
 
 ![Redmine MCP Dashboard](./docs/images/redmine-mcp-dashboard.png)
 
-The Redmine MCP dashboard provides an intuitive interface for managing your MCP server. Configure your Redmine connection, test it, and start the server to enable AI-powered Redmine interactions.
+The Redmine MCP dashboard provides an intuitive interface for managing your MCP server. Configure your Redmine connection, select which tools to enable, and start the server for AI-powered Redmine interactions.
 
 ## 🚀 Features
 
+### Core Features
 - **MCP Server**: Streamable HTTP server using Axum on configurable port (default: 37650)
 - **Redmine Integration**: Full access to Redmine API for issues, projects, users, and time tracking
 - **Journal Support**: Complete issue history tracking with comments and field changes
 - **Persistent Configuration**: Securely stores Redmine settings locally (~/.redmine-mcp/config.json)
 - **Secure Configuration**: API key authentication with connection testing
 - **Cross-Platform**: Works on macOS, Windows, and Linux
-- **Modern UI**: React-based interface with Tailwind CSS styling
-- **Real-time Control**: Start/stop MCP server from the UI
+
+### New Features 🎉
+- **Tool Selection UI**: Choose which MCP tools to enable before starting the server
+- **Tool Categories**: Tools organized into logical groups (Issues, Projects, Users, Time Entries)
+- **Safety First**: Create and Update operations disabled by default
+- **Visual Feedback**: See enabled tools even when server is running
+- **Internationalization**: Full English and Japanese language support
+- **Modern UI**: React-based interface with Tailwind CSS v4 styling
 
 ## 📋 Prerequisites
 
@@ -59,8 +66,20 @@ npm run tauri dev
 2. **Configure in the app**:
    - Enter your Redmine server URL (e.g., `https://redmine.example.com`)
    - Enter your API key
-   - Click "Test Connection" to verify
-   - Once verified, you can start the MCP server
+   - Click "Check Connection" to verify
+   - Select which tools you want to enable (optional)
+   - Once verified, start the MCP server
+
+### Tool Selection
+
+The application now provides granular control over which tools are exposed through the MCP server:
+
+- **Issues**: List, Get, Create*, Update*, Delete operations
+- **Projects**: List, Get, Create operations
+- **Users**: List, Get current user
+- **Time Entries**: List, Create
+
+*Create and Update issue operations are disabled by default for safety.
 
 ### Running as MCP Server
 
@@ -73,7 +92,13 @@ cargo run --release --manifest-path src-tauri/Cargo.toml
 The server runs on port 37650 and provides:
 - HTTP POST endpoint for JSON-RPC 2.0 requests
 - HTTP GET endpoint for Server-Sent Events (SSE) streaming
-- Session management via Mcp-Session-Id header
+- Session management via default session
+
+### Connect with Claude Code
+
+```bash
+claude mcp add --transport http redmine http://localhost:37650/mcp
+```
 
 ### Connect with Claude Desktop
 
@@ -81,27 +106,26 @@ Add to your Claude Desktop configuration:
 
 ```json
 {
-  "mcpServers": {
-    "redmine": {
-      "url": "http://localhost:37650/mcp"
-    }
+  "redmine": {
+    "command": "npx",
+    "args": [
+      "-y",
+      "mcp-remote",
+      "http://localhost:37650/mcp"
+    ]
   }
 }
 ```
 
+### Connect with VS Code
+
+```bash
+code --add-mcp "{\"name\":\"redmine\",\"url\":\"http://localhost:37650/mcp\"}"
+```
+
 ## 🔧 Available MCP Tools
 
-### Configuration Tools
-
-#### redmine_configure
-Configure Redmine connection settings.
-
-**Parameters:**
-- `host` (string, required): Redmine server URL
-- `api_key` (string, required): Redmine API key
-
-#### redmine_test_connection
-Test the Redmine connection.
+**Note**: `redmine_configure` and `redmine_test_connection` have been removed as configuration is handled through the Tauri application UI.
 
 ### Issue Management
 
@@ -125,7 +149,7 @@ Get a specific issue by ID with full journal history.
 **Returns:**
 - Issue details including attachments and journals (comments/history)
 
-#### redmine_create_issue
+#### redmine_create_issue (Disabled by default)
 Create a new issue.
 
 **Parameters:**
@@ -141,7 +165,7 @@ Create a new issue.
 - `due_date` (string): Due date (YYYY-MM-DD)
 - `estimated_hours` (number): Estimated hours
 
-#### redmine_update_issue
+#### redmine_update_issue (Disabled by default)
 Update an existing issue.
 
 **Parameters:**
@@ -231,6 +255,7 @@ Create a time entry.
 - **TypeScript** - Type safety
 - **Tailwind CSS v4** - Styling
 - **Vite** - Build tool
+- **@tauri-apps/api** - Tauri integration
 
 ### Backend
 
@@ -255,20 +280,46 @@ redmine-mcp/
 ├── src/                      # React frontend
 │   ├── App.tsx              # Main UI with Redmine config & MCP controls
 │   ├── App.css              # Tailwind CSS styles
+│   ├── i18n.ts              # Language translations (EN/JP)
 │   └── main.tsx             # Application entry point
 ├── src-tauri/               # Rust backend
 │   ├── src/
 │   │   ├── lib.rs           # Tauri commands & server lifecycle
 │   │   ├── mcp_server.rs    # MCP Streamable HTTP server (Axum)
 │   │   └── redmine_client.rs # Redmine API client
+│   ├── icons/               # Application icons
 │   ├── Cargo.toml           # Rust dependencies
 │   └── tauri.conf.json      # Tauri configuration
 ├── .claude/                 # Claude AI documentation
 │   └── CLAUDE.md           # Project context for AI assistance
-├── package.json            # Node.js dependencies
-├── vite.config.ts          # Vite configuration
-└── README.md              # This file
+├── icon-source.svg         # Source icon for the app
+├── app-icon.png           # Generated 1024x1024 PNG icon
+├── package.json           # Node.js dependencies
+├── vite.config.ts         # Vite configuration
+└── README.md             # This file
 ```
+
+## 🎨 Icon Management
+
+### Update Application Icon
+
+1. **Edit the source SVG**:
+   - Modify `icon-source.svg` with your vector graphics editor
+
+2. **Convert to PNG** (requires ImageMagick):
+   ```bash
+   magick -background none -density 300 icon-source.svg -resize 1024x1024 app-icon.png
+   ```
+
+3. **Generate platform icons**:
+   ```bash
+   npm run tauri icon app-icon.png
+   ```
+
+4. **Rebuild the application**:
+   ```bash
+   npm run tauri build
+   ```
 
 ## 🔨 Build
 
@@ -286,14 +337,16 @@ The built application will be available in:
 
 ## 🧪 Testing
 
-Test the MCP server endpoints:
-
-```bash
-# Run the test script
-./test-mcp-server.sh
-```
-
-Or manually test with curl commands.
+The MCP server has been tested with:
+- Session initialization ✅
+- Tools listing ✅
+- Redmine API integration ✅
+- Issue CRUD operations ✅
+- Project management ✅
+- User queries ✅
+- Time tracking ✅
+- Tool selection and filtering ✅
+- Internationalization ✅
 
 ## 🦀 Why Rust?
 
@@ -328,6 +381,8 @@ Redmine MCP leverages Rust's unique advantages:
 - [x] Time tracking tools
 - [x] Secure API key configuration
 - [x] Connection testing
+- [x] Tool selection UI
+- [x] Internationalization (EN/JP)
 - [ ] Wiki page management
 - [ ] File attachment support
 - [ ] Custom field support
@@ -335,6 +390,7 @@ Redmine MCP leverages Rust's unique advantages:
 - [ ] Version/milestone management
 - [ ] Activity feeds
 - [ ] Saved queries support
+- [ ] Advanced filtering UI
 
 ## 🤝 Contributing
 
@@ -355,6 +411,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [Tauri](https://tauri.app/) - For the amazing desktop framework
 - [MCP Specification](https://spec.modelcontextprotocol.io/) - For the protocol documentation
 - [Redmine](https://www.redmine.org/) - For the powerful project management system
+- [Axum](https://github.com/tokio-rs/axum) - For the excellent web framework
 
 ## 📞 Support
 
