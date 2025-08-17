@@ -16,13 +16,21 @@ The Redmine MCP dashboard provides an intuitive interface for managing your MCP 
 - **Secure Configuration**: API key authentication with connection testing
 - **Cross-Platform**: Works on macOS, Windows, and Linux
 
-### New Features 🎉
+### Advanced Features 🎉
 - **Tool Selection UI**: Choose which MCP tools to enable before starting the server
 - **Tool Categories**: Tools organized into logical groups (Issues, Projects, Users, Time Entries)
 - **Safety First**: Create and Update operations disabled by default
 - **Visual Feedback**: See enabled tools even when server is running
 - **Local SQLite Cache**: Store Redmine data locally for offline access and performance
-- **Cache Management**: View statistics, refresh data, and manage cache lifecycle
+- **Cache Management**: 
+  - Statistics modal for viewing cached data counts
+  - Menu-based controls in top-left corner
+  - Auto-clear cache when switching Redmine servers
+  - Full-text search with pagination support
+- **Connection Management**:
+  - Timeout protection (10s backend, 15s frontend)
+  - Auto-reset status when credentials change
+  - Detailed error messages for troubleshooting
 - **Internationalization**: Full English and Japanese language support
 - **Modern UI**: React-based interface with Tailwind CSS v4 styling
 
@@ -74,37 +82,39 @@ npm run tauri dev
 
 ### Tool Selection
 
-The application now provides granular control over which tools are exposed through the MCP server:
+The application provides granular control over which tools are exposed through the MCP server:
 
 - **Issues**: List, Get, Create*, Update*, Delete operations
 - **Projects**: List, Get, Create operations
 - **Users**: List, Get current user
 - **Time Entries**: List, Create
+- **Cache Tools**: Download All Issues, Search Cached Issues, Get Stats, Clear Cache (enabled by default)
 
 *Create and Update issue operations are disabled by default for safety.
 
 ### Local Cache Management
 
-The application now includes a powerful SQLite-based local cache system:
+The application includes a powerful SQLite-based local cache system:
 
 #### Cache Features
-- **Automatic Database Initialization**: SQLite database is created automatically on first launch
-- **Data Caching**: Store issues, projects, users, and time entries locally
-- **Cache Statistics**: View real-time statistics of cached items
-- **Cache Refresh**: Update cache with latest data from Redmine
-- **Cache Cleanup**: Clear all cache or remove old entries
+- **Automatic Database Initialization**: SQLite database created automatically on first launch
+- **Paginated Download**: Downloads all issues in batches of 100 for efficiency
+- **Full-Text Search**: Search cached issues with pagination support (limit/offset)
+- **Filter Support**: Filter by project, status, and assignee
+- **Statistics Modal**: View cache statistics in a clean modal interface
+- **Menu Controls**: Access cache operations via dropdown menu in top-left corner
+- **Auto-Clear**: Cache automatically cleared when switching Redmine servers
 
 #### Cache Location
 The SQLite database is stored at:
 - **macOS/Linux**: `~/.redmine-mcp/cache.db`
 - **Windows**: `%USERPROFILE%\.redmine-mcp\cache.db`
 
-#### Cache Operations
-- **Cache Issues**: Fetch and store issues from Redmine
-- **Cache Projects**: Fetch and store project data
-- **View Statistics**: See count of cached items by type
-- **Clear Cache**: Remove all cached data
-- **Clear Old Cache**: Remove entries older than specified days
+#### Cache Operations via MCP Tools
+- **redmine_download_all_issues**: Download and cache all issues (with progress pagination)
+- **redmine_search_cached_issues**: Search with query, filters, limit, and offset parameters
+- **redmine_get_cache_stats**: Get current cache statistics
+- **redmine_clear_cache**: Remove all cached data
 
 ### Running as MCP Server
 
@@ -271,6 +281,40 @@ Create a time entry.
 - `activity_id` (number): Activity ID
 - `comments` (string): Comments
 - `spent_on` (string): Date (YYYY-MM-DD)
+
+### Cache Management
+
+#### redmine_download_all_issues
+Download all issues from Redmine and cache them locally.
+
+**Returns:**
+- Success message with total number of cached issues
+
+#### redmine_search_cached_issues
+Search locally cached issues with full-text search and filters.
+
+**Parameters:**
+- `query` (string, required): Search query for subject and description
+- `project_id` (number): Filter by project ID
+- `status_id` (number): Filter by status ID
+- `assigned_to_id` (number): Filter by assignee ID
+- `limit` (number): Maximum results per page (default: 100)
+- `offset` (number): Number of results to skip for pagination (default: 0)
+
+**Returns:**
+- List of matching issues with pagination info
+
+#### redmine_get_cache_stats
+Get statistics about locally cached data.
+
+**Returns:**
+- Count of cached issues (projects, users, time_entries currently not used)
+
+#### redmine_clear_cache
+Clear all locally cached data.
+
+**Returns:**
+- Success confirmation message
 
 ## 🏗️ Tech Stack
 
