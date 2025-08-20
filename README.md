@@ -2,6 +2,8 @@
 
 m3u8 MCP Server - A desktop application that provides m3u8/HLS streaming capabilities through the Model Context Protocol (MCP), built with Tauri, React, and Rust.
 
+![m3u8 MCP Dashboard](docs/images/dashboard.png)
+
 📝 **Related article**: [Understanding m3u8 files and FFmpeg streaming (Japanese)](https://qiita.com/yonaka15/items/09d41f722fa226c2d48c)
 
 ## 🚀 Features
