@@ -1,11 +1,17 @@
 mod mcp_server;
-mod redmine_client;
+mod m3u8_parser;
+mod ffmpeg_wrapper;
 mod database;
 
 use std::sync::Arc;
-use tauri::State;
-use tokio::sync::Mutex;
-use std::collections::HashMap;
+use std::path::PathBuf;
+use tauri::{State, Emitter};
+use tokio::sync::{Mutex, RwLock};
+
+// Global state for current m3u8 URL
+lazy_static::lazy_static! {
+    pub static ref CURRENT_M3U8_URL: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
+}
 
 // Server state for Tauri
 struct ServerHandle {
@@ -19,12 +25,345 @@ struct DatabaseHandle {
     db: Arc<Mutex<Option<Arc<database::Database>>>>,
 }
 
+// m3u8 parser state for Tauri
+struct M3u8ParserHandle {
+    parser: Arc<m3u8_parser::M3u8Parser>,
+}
+
+// FFmpeg state for Tauri  
+struct FFmpegHandle {
+    wrapper: Arc<Mutex<ffmpeg_wrapper::FFmpegWrapper>>,
+}
+
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
 fn greet(name: &str) -> String {
-    format!("Hello, {}! You've been greeted from Rust!", name)
+    format!("Hello, {}! Welcome to m3u8 MCP!", name)
 }
 
+// m3u8 URL management commands
+#[tauri::command]
+async fn set_current_m3u8_url(url: String) -> Result<(), String> {
+    let mut url_state = CURRENT_M3U8_URL.write().await;
+    // Set to None if the URL is empty, otherwise Some(url)
+    *url_state = if url.trim().is_empty() {
+        None
+    } else {
+        // Save to history if not empty
+        if let Err(e) = save_url_to_history(&url).await {
+            eprintln!("Failed to save URL to history: {}", e);
+        }
+        Some(url)
+    };
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_current_m3u8_url() -> Result<Option<String>, String> {
+    let url_state = CURRENT_M3U8_URL.read().await;
+    Ok(url_state.clone())
+}
+
+// m3u8 parsing commands
+#[tauri::command]
+async fn parse_m3u8_url(
+    parser_state: State<'_, M3u8ParserHandle>,
+    url: String
+) -> Result<m3u8_parser::ParsedPlaylist, String> {
+    parser_state.parser
+        .parse_url(&url)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn extract_m3u8_segments(
+    parser_state: State<'_, M3u8ParserHandle>,
+    url: String,
+    base_url: Option<String>
+) -> Result<Vec<String>, String> {
+    parser_state.parser
+        .extract_segments(&url, base_url.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// FFmpeg commands
+#[tauri::command]
+async fn check_ffmpeg_installation(
+    ffmpeg_state: State<'_, Arc<Mutex<FFmpegHandle>>>
+) -> Result<String, String> {
+    let handle = ffmpeg_state.lock().await;
+    let wrapper = handle.wrapper.lock().await;
+    wrapper.check_installation()
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn cancel_download(
+    _app: tauri::AppHandle,
+    ffmpeg_state: State<'_, Arc<Mutex<FFmpegHandle>>>
+) -> Result<String, String> {
+    println!("cancel_download command called");
+    let handle = ffmpeg_state.lock().await;
+    let wrapper = handle.wrapper.lock().await;
+    
+    println!("Calling FFmpegWrapper::cancel_download");
+    wrapper.cancel_download()
+        .await
+        .map_err(|e| {
+            let error_msg = e.to_string();
+            eprintln!("Cancel failed: {}", error_msg);
+            error_msg
+        })?;
+    
+    println!("Download cancelled successfully");
+    Ok("Download cancelled".to_string())
+}
+
+#[tauri::command]
+async fn download_m3u8_stream(
+    app: tauri::AppHandle,
+    ffmpeg_state: State<'_, Arc<Mutex<FFmpegHandle>>>,
+    url: String,
+    output_path: Option<String>
+) -> Result<String, String> {
+    println!("Download requested for URL: {}", url);
+    
+    // Emit start event
+    app.emit("download-progress", serde_json::json!({
+        "status": "starting",
+        "message": "Initializing download..."
+    })).ok();
+    
+    let handle = ffmpeg_state.lock().await;
+    let mut wrapper = handle.wrapper.lock().await;
+    
+    let output = if let Some(path) = output_path {
+        println!("Using provided output path: {}", path);
+        Some(PathBuf::from(path))
+    } else {
+        println!("No output path provided, will generate default");
+        None
+    };
+    
+    // Set the app handle for event emission
+    wrapper.set_app_handle(Some(app.clone()));
+    
+    println!("Starting FFmpeg download...");
+    let result_path = wrapper
+        .download_stream(&url, output.as_deref())
+        .await
+        .map_err(|e| {
+            let error_msg = format!("FFmpeg download failed: {}", e);
+            eprintln!("{}", error_msg);
+            // Emit error event
+            app.emit("download-progress", serde_json::json!({
+                "status": "error",
+                "message": error_msg.clone()
+            })).ok();
+            error_msg
+        })?;
+    
+    let path_str = result_path.to_string_lossy().to_string();
+    println!("Download completed successfully: {}", path_str);
+    
+    // Emit completion event
+    app.emit("download-progress", serde_json::json!({
+        "status": "completed",
+        "message": format!("Download completed: {}", path_str)
+    })).ok();
+    
+    Ok(path_str)
+}
+
+#[tauri::command]
+async fn convert_to_hls(
+    ffmpeg_state: State<'_, Arc<Mutex<FFmpegHandle>>>,
+    input_path: String,
+    output_dir: String,
+    segment_duration: u32
+) -> Result<String, String> {
+    let handle = ffmpeg_state.lock().await;
+    let wrapper = handle.wrapper.lock().await;
+    
+    let result_path = wrapper
+        .convert_to_hls(
+            &PathBuf::from(input_path),
+            &PathBuf::from(output_dir),
+            segment_duration
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    
+    Ok(result_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+async fn probe_stream(
+    ffmpeg_state: State<'_, Arc<Mutex<FFmpegHandle>>>,
+    url: String
+) -> Result<String, String> {
+    let handle = ffmpeg_state.lock().await;
+    let wrapper = handle.wrapper.lock().await;
+    
+    wrapper.probe_stream(&url)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+// URL history management
+async fn save_url_to_history(url: &str) -> Result<(), String> {
+    use std::fs;
+    use serde_json::json;
+    
+    let home_dir = dirs::home_dir()
+        .ok_or("Failed to get home directory")?;
+    let config_dir = home_dir.join(".m3u8-mcp");
+    
+    fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    
+    let history_path = config_dir.join("url_history.json");
+    
+    // Read existing history
+    let mut history: Vec<serde_json::Value> = if history_path.exists() {
+        let content = fs::read_to_string(&history_path)
+            .unwrap_or_else(|_| "[]".to_string());
+        serde_json::from_str(&content).unwrap_or_else(|_| Vec::new())
+    } else {
+        Vec::new()
+    };
+    
+    // Create new entry
+    let entry = json!({
+        "url": url,
+        "timestamp": chrono::Local::now().to_rfc3339(),
+    });
+    
+    // Check if URL already exists and remove it
+    history.retain(|item| {
+        item.get("url")
+            .and_then(|v| v.as_str())
+            .map(|u| u != url)
+            .unwrap_or(true)
+    });
+    
+    // Add new entry at the beginning
+    history.insert(0, entry);
+    
+    // Keep only last 20 URLs
+    history.truncate(20);
+    
+    // Save to file
+    let json_str = serde_json::to_string_pretty(&history)
+        .map_err(|e| format!("Failed to serialize history: {}", e))?;
+    
+    fs::write(history_path, json_str)
+        .map_err(|e| format!("Failed to save history: {}", e))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn get_url_history() -> Result<Vec<serde_json::Value>, String> {
+    use std::fs;
+    
+    let home_dir = dirs::home_dir()
+        .ok_or("Failed to get home directory")?;
+    let history_path = home_dir.join(".m3u8-mcp").join("url_history.json");
+    
+    if !history_path.exists() {
+        return Ok(Vec::new());
+    }
+    
+    let content = fs::read_to_string(history_path)
+        .map_err(|e| format!("Failed to read history: {}", e))?;
+    
+    serde_json::from_str(&content)
+        .map_err(|e| format!("Failed to parse history: {}", e))
+}
+
+#[tauri::command]
+async fn get_last_used_url() -> Result<Option<String>, String> {
+    let history = get_url_history().await?;
+    
+    if history.is_empty() {
+        return Ok(None);
+    }
+    
+    Ok(history[0].get("url")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string()))
+}
+
+#[tauri::command]
+async fn clear_url_history() -> Result<(), String> {
+    use std::fs;
+    
+    let home_dir = dirs::home_dir()
+        .ok_or("Failed to get home directory")?;
+    let history_path = home_dir.join(".m3u8-mcp").join("url_history.json");
+    
+    if history_path.exists() {
+        fs::write(history_path, "[]")
+            .map_err(|e| format!("Failed to clear history: {}", e))?;
+    }
+    
+    Ok(())
+}
+
+// Configuration management
+#[tauri::command]
+async fn save_m3u8_config(
+    ffmpeg_path: Option<String>,
+    output_dir: String
+) -> Result<(), String> {
+    use std::fs;
+    
+    let home_dir = dirs::home_dir()
+        .ok_or("Failed to get home directory")?;
+    let config_dir = home_dir.join(".m3u8-mcp");
+    
+    fs::create_dir_all(&config_dir)
+        .map_err(|e| format!("Failed to create config directory: {}", e))?;
+    
+    let config_path = config_dir.join("config.json");
+    let config = serde_json::json!({
+        "ffmpeg_path": ffmpeg_path,
+        "output_dir": output_dir
+    });
+    
+    fs::write(config_path, config.to_string())
+        .map_err(|e| format!("Failed to save configuration: {}", e))?;
+    
+    Ok(())
+}
+
+#[tauri::command]
+async fn load_m3u8_config() -> Result<serde_json::Value, String> {
+    use std::fs;
+    
+    let home_dir = dirs::home_dir()
+        .ok_or("Failed to get home directory")?;
+    let config_dir = home_dir.join(".m3u8-mcp");
+    let config_path = config_dir.join("config.json");
+    
+    if !config_path.exists() {
+        return Ok(serde_json::json!({
+            "ffmpeg_path": null,
+            "output_dir": home_dir.join("Downloads").join("m3u8-mcp").to_string_lossy()
+        }));
+    }
+    
+    let config_str = fs::read_to_string(config_path)
+        .map_err(|e| format!("Failed to read configuration: {}", e))?;
+    
+    serde_json::from_str(&config_str)
+        .map_err(|e| format!("Failed to parse configuration: {}", e))
+}
+
+// MCP Server commands (unchanged)
 #[tauri::command]
 async fn start_mcp_server(
     state: State<'_, Arc<Mutex<ServerHandle>>>, 
@@ -190,190 +529,6 @@ async fn check_port_availability(port: u16) -> Result<bool, String> {
     }
 }
 
-// Redmine configuration commands
-#[tauri::command]
-async fn configure_redmine(host: String, api_key: String) -> Result<String, String> {
-    // Initialize Redmine client
-    redmine_client::init_client(host.clone(), api_key.clone())
-        .await
-        .map_err(|e| format!("Failed to configure Redmine: {}", e))?;
-    
-    // Save configuration to local storage
-    save_redmine_config(host.clone(), api_key)
-        .await
-        .map_err(|e| format!("Failed to save configuration: {}", e))?;
-    
-    Ok(format!("Redmine configured: {}", host))
-}
-
-// Save Redmine configuration to local storage
-async fn save_redmine_config(host: String, api_key: String) -> Result<(), Box<dyn std::error::Error>> {
-    use std::fs;
-    
-    // Get app data directory using home directory
-    let home_dir = dirs::home_dir()
-        .ok_or("Failed to get home directory")?;
-    let config_dir = home_dir.join(".redmine-mcp");
-    
-    // Create directory if it doesn't exist
-    fs::create_dir_all(&config_dir)?;
-    
-    // Save configuration as JSON
-    let config_path = config_dir.join("config.json");
-    let config = serde_json::json!({
-        "host": host,
-        "api_key": api_key
-    });
-    
-    fs::write(config_path, config.to_string())?;
-    Ok(())
-}
-
-// Load Redmine configuration from local storage
-#[tauri::command]
-async fn load_redmine_config() -> Result<serde_json::Value, String> {
-    use std::fs;
-    
-    // Get app data directory using home directory
-    let home_dir = dirs::home_dir()
-        .ok_or("Failed to get home directory")?;
-    let config_dir = home_dir.join(".redmine-mcp");
-    
-    let config_path = config_dir.join("config.json");
-    
-    // Check if config file exists
-    if !config_path.exists() {
-        return Ok(serde_json::json!(null));
-    }
-    
-    // Read and parse configuration
-    let config_str = fs::read_to_string(config_path)
-        .map_err(|e| format!("Failed to read configuration: {}", e))?;
-    
-    let config: serde_json::Value = serde_json::from_str(&config_str)
-        .map_err(|e| format!("Failed to parse configuration: {}", e))?;
-    
-    // Initialize Redmine client with saved configuration
-    if let (Some(host), Some(api_key)) = (config.get("host"), config.get("api_key")) {
-        if let (Some(host_str), Some(api_key_str)) = (host.as_str(), api_key.as_str()) {
-            redmine_client::init_client(host_str.to_string(), api_key_str.to_string())
-                .await
-                .map_err(|e| format!("Failed to initialize Redmine client: {}", e))?;
-        }
-    }
-    
-    Ok(config)
-}
-
-#[tauri::command]
-async fn test_redmine_connection() -> Result<serde_json::Value, String> {
-    let guard = redmine_client::get_client()
-        .await
-        .map_err(|e| format!("Failed to get client: {}", e))?;
-    
-    if let Some(client) = guard.as_ref() {
-        // Test connection by getting current user
-        match client.get_current_user().await {
-            Ok(user) => Ok(user),
-            Err(e) => Err(format!("Connection test failed: {}", e))
-        }
-    } else {
-        Err("Redmine client not configured".to_string())
-    }
-}
-
-// Redmine Issue commands
-#[tauri::command]
-async fn list_redmine_issues(params: HashMap<String, String>) -> Result<serde_json::Value, String> {
-    let guard = redmine_client::get_client()
-        .await
-        .map_err(|e| format!("Failed to get client: {}", e))?;
-    
-    if let Some(client) = guard.as_ref() {
-        client.list_issues(params)
-            .await
-            .map_err(|e| format!("Failed to list issues: {}", e))
-    } else {
-        Err("Redmine client not configured".to_string())
-    }
-}
-
-#[tauri::command]
-async fn get_redmine_issue(id: u32) -> Result<serde_json::Value, String> {
-    let guard = redmine_client::get_client()
-        .await
-        .map_err(|e| format!("Failed to get client: {}", e))?;
-    
-    if let Some(client) = guard.as_ref() {
-        client.get_issue(id)
-            .await
-            .map_err(|e| format!("Failed to get issue: {}", e))
-    } else {
-        Err("Redmine client not configured".to_string())
-    }
-}
-
-#[tauri::command]
-async fn create_redmine_issue(issue: serde_json::Value) -> Result<serde_json::Value, String> {
-    let guard = redmine_client::get_client()
-        .await
-        .map_err(|e| format!("Failed to get client: {}", e))?;
-    
-    if let Some(client) = guard.as_ref() {
-        client.create_issue(issue)
-            .await
-            .map_err(|e| format!("Failed to create issue: {}", e))
-    } else {
-        Err("Redmine client not configured".to_string())
-    }
-}
-
-#[tauri::command]
-async fn update_redmine_issue(id: u32, issue: serde_json::Value) -> Result<serde_json::Value, String> {
-    let guard = redmine_client::get_client()
-        .await
-        .map_err(|e| format!("Failed to get client: {}", e))?;
-    
-    if let Some(client) = guard.as_ref() {
-        client.update_issue(id, issue)
-            .await
-            .map_err(|e| format!("Failed to update issue: {}", e))
-    } else {
-        Err("Redmine client not configured".to_string())
-    }
-}
-
-// Redmine Project commands
-#[tauri::command]
-async fn list_redmine_projects(params: HashMap<String, String>) -> Result<serde_json::Value, String> {
-    let guard = redmine_client::get_client()
-        .await
-        .map_err(|e| format!("Failed to get client: {}", e))?;
-    
-    if let Some(client) = guard.as_ref() {
-        client.list_projects(params)
-            .await
-            .map_err(|e| format!("Failed to list projects: {}", e))
-    } else {
-        Err("Redmine client not configured".to_string())
-    }
-}
-
-#[tauri::command]
-async fn get_redmine_project(id: String) -> Result<serde_json::Value, String> {
-    let guard = redmine_client::get_client()
-        .await
-        .map_err(|e| format!("Failed to get client: {}", e))?;
-    
-    if let Some(client) = guard.as_ref() {
-        client.get_project(&id)
-            .await
-            .map_err(|e| format!("Failed to get project: {}", e))
-    } else {
-        Err("Redmine client not configured".to_string())
-    }
-}
-
 // Database commands
 #[tauri::command]
 async fn init_database(db_state: State<'_, Arc<Mutex<DatabaseHandle>>>) -> Result<String, String> {
@@ -382,7 +537,7 @@ async fn init_database(db_state: State<'_, Arc<Mutex<DatabaseHandle>>>) -> Resul
     // Get app data directory using home directory
     let home_dir = dirs::home_dir()
         .ok_or("Failed to get home directory")?;
-    let db_dir = home_dir.join(".redmine-mcp");
+    let db_dir = home_dir.join(".m3u8-mcp");
     let db_path = db_dir.join("cache.db");
     
     // Create and initialize database
@@ -409,39 +564,6 @@ async fn get_cache_stats(db_state: State<'_, Arc<Mutex<DatabaseHandle>>>) -> Res
 }
 
 #[tauri::command]
-async fn get_cached_issues(
-    db_state: State<'_, Arc<Mutex<DatabaseHandle>>>,
-    project_id: Option<i32>,
-    limit: Option<usize>
-) -> Result<Vec<database::CachedIssue>, String> {
-    let db_handle = db_state.lock().await;
-    let db_lock = db_handle.db.lock().await;
-    
-    if let Some(ref db) = *db_lock {
-        db.get_cached_issues(project_id, limit.unwrap_or(100))
-            .map_err(|e| format!("Failed to get cached issues: {}", e))
-    } else {
-        Err("Database not initialized".to_string())
-    }
-}
-
-#[tauri::command]
-async fn get_cached_projects(
-    db_state: State<'_, Arc<Mutex<DatabaseHandle>>>,
-    limit: Option<usize>
-) -> Result<Vec<database::CachedProject>, String> {
-    let db_handle = db_state.lock().await;
-    let db_lock = db_handle.db.lock().await;
-    
-    if let Some(ref db) = *db_lock {
-        db.get_cached_projects(limit.unwrap_or(100))
-            .map_err(|e| format!("Failed to get cached projects: {}", e))
-    } else {
-        Err("Database not initialized".to_string())
-    }
-}
-
-#[tauri::command]
 async fn clear_cache(db_state: State<'_, Arc<Mutex<DatabaseHandle>>>) -> Result<String, String> {
     let db_handle = db_state.lock().await;
     let db_lock = db_handle.db.lock().await;
@@ -452,259 +574,6 @@ async fn clear_cache(db_state: State<'_, Arc<Mutex<DatabaseHandle>>>) -> Result<
         Ok("Cache cleared successfully".to_string())
     } else {
         Err("Database not initialized".to_string())
-    }
-}
-
-#[tauri::command]
-async fn clear_old_cache(
-    db_state: State<'_, Arc<Mutex<DatabaseHandle>>>,
-    days: i64
-) -> Result<String, String> {
-    let db_handle = db_state.lock().await;
-    let db_lock = db_handle.db.lock().await;
-    
-    if let Some(ref db) = *db_lock {
-        db.clear_old_cache(days)
-            .map_err(|e| format!("Failed to clear old cache: {}", e))?;
-        Ok(format!("Cleared cache older than {} days", days))
-    } else {
-        Err("Database not initialized".to_string())
-    }
-}
-
-// Download ALL issues from Redmine with pagination
-#[tauri::command]
-async fn download_all_issues(
-    db_state: State<'_, Arc<Mutex<DatabaseHandle>>>
-) -> Result<String, String> {
-    let guard = redmine_client::get_client()
-        .await
-        .map_err(|e| format!("Failed to get client: {}", e))?;
-    
-    if let Some(client) = guard.as_ref() {
-        let db_handle = db_state.lock().await;
-        let db_lock = db_handle.db.lock().await;
-        
-        if let Some(ref db) = *db_lock {
-            let mut total_cached = 0;
-            let mut offset = 0;
-            const LIMIT: usize = 100;
-            let now = chrono::Utc::now();
-            
-            loop {
-                // Fetch issues with pagination
-                let mut params = HashMap::new();
-                params.insert("limit".to_string(), LIMIT.to_string());
-                params.insert("offset".to_string(), offset.to_string());
-                params.insert("status_id".to_string(), "*".to_string()); // All statuses
-                
-                let issues_json = client.list_issues(params)
-                    .await
-                    .map_err(|e| format!("Failed to list issues at offset {}: {}", offset, e))?;
-                
-                if let Some(issues_array) = issues_json.get("issues").and_then(|v| v.as_array()) {
-                    if issues_array.is_empty() {
-                        break; // No more issues
-                    }
-                    
-                    for issue in issues_array {
-                        // Convert JSON to CachedIssue
-                        let cached_issue = database::CachedIssue {
-                            id: issue.get("id").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                            project_id: issue.get("project")
-                                .and_then(|p| p.get("id"))
-                                .and_then(|v| v.as_i64())
-                                .unwrap_or(0) as i32,
-                            project_name: issue.get("project")
-                                .and_then(|p| p.get("name"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            subject: issue.get("subject")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            description: issue.get("description")
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            status_id: issue.get("status")
-                                .and_then(|s| s.get("id"))
-                                .and_then(|v| v.as_i64())
-                                .unwrap_or(0) as i32,
-                            status_name: issue.get("status")
-                                .and_then(|s| s.get("name"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            priority_id: issue.get("priority")
-                                .and_then(|p| p.get("id"))
-                                .and_then(|v| v.as_i64())
-                                .unwrap_or(0) as i32,
-                            priority_name: issue.get("priority")
-                                .and_then(|p| p.get("name"))
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("")
-                                .to_string(),
-                            assigned_to_id: issue.get("assigned_to")
-                                .and_then(|a| a.get("id"))
-                                .and_then(|v| v.as_i64())
-                                .map(|id| id as i32),
-                            assigned_to_name: issue.get("assigned_to")
-                                .and_then(|a| a.get("name"))
-                                .and_then(|v| v.as_str())
-                                .map(|s| s.to_string()),
-                            created_on: issue.get("created_on")
-                                .and_then(|v| v.as_str())
-                                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                                .map(|dt| dt.with_timezone(&chrono::Utc))
-                                .unwrap_or(now),
-                            updated_on: issue.get("updated_on")
-                                .and_then(|v| v.as_str())
-                                .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                                .map(|dt| dt.with_timezone(&chrono::Utc))
-                                .unwrap_or(now),
-                            cached_at: now,
-                        };
-                        
-                        if let Ok(_) = db.cache_issue(&cached_issue) {
-                            total_cached += 1;
-                        }
-                    }
-                    
-                    offset += issues_array.len();
-                } else {
-                    break;
-                }
-            }
-            
-            Ok(format!("Downloaded and cached {} issues", total_cached))
-        } else {
-            Err("Database not initialized".to_string())
-        }
-    } else {
-        Err("Redmine client not configured".to_string())
-    }
-}
-
-// Search cached issues
-#[tauri::command]
-async fn search_cached_issues(
-    db_state: State<'_, Arc<Mutex<DatabaseHandle>>>,
-    query: String,
-    project_id: Option<i32>,
-    status_id: Option<i32>,
-    assigned_to_id: Option<i32>,
-    limit: Option<usize>
-) -> Result<Vec<database::CachedIssue>, String> {
-    let db_handle = db_state.lock().await;
-    let db_lock = db_handle.db.lock().await;
-    
-    if let Some(ref db) = *db_lock {
-        db.search_issues(&query, project_id, status_id, assigned_to_id, limit.unwrap_or(100), 0)
-            .map_err(|e| format!("Failed to search issues: {}", e))
-    } else {
-        Err("Database not initialized".to_string())
-    }
-}
-
-// Cache Redmine data to database
-#[tauri::command]
-async fn cache_redmine_issues(
-    db_state: State<'_, Arc<Mutex<DatabaseHandle>>>,
-    params: HashMap<String, String>
-) -> Result<String, String> {
-    // First, fetch issues from Redmine
-    let guard = redmine_client::get_client()
-        .await
-        .map_err(|e| format!("Failed to get client: {}", e))?;
-    
-    if let Some(client) = guard.as_ref() {
-        let issues_json = client.list_issues(params)
-            .await
-            .map_err(|e| format!("Failed to list issues: {}", e))?;
-        
-        // Parse and cache the issues
-        let db_handle = db_state.lock().await;
-        let db_lock = db_handle.db.lock().await;
-        
-        if let Some(ref db) = *db_lock {
-            if let Some(issues_array) = issues_json.get("issues").and_then(|v| v.as_array()) {
-                let mut cached_count = 0;
-                let now = chrono::Utc::now();
-                
-                for issue in issues_array {
-                    // Convert JSON to CachedIssue
-                    let cached_issue = database::CachedIssue {
-                        id: issue.get("id").and_then(|v| v.as_i64()).unwrap_or(0) as i32,
-                        project_id: issue.get("project")
-                            .and_then(|p| p.get("id"))
-                            .and_then(|v| v.as_i64())
-                            .unwrap_or(0) as i32,
-                        project_name: issue.get("project")
-                            .and_then(|p| p.get("name"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        subject: issue.get("subject")
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        description: issue.get("description")
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        status_id: issue.get("status")
-                            .and_then(|s| s.get("id"))
-                            .and_then(|v| v.as_i64())
-                            .unwrap_or(0) as i32,
-                        status_name: issue.get("status")
-                            .and_then(|s| s.get("name"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        priority_id: issue.get("priority")
-                            .and_then(|p| p.get("id"))
-                            .and_then(|v| v.as_i64())
-                            .unwrap_or(0) as i32,
-                        priority_name: issue.get("priority")
-                            .and_then(|p| p.get("name"))
-                            .and_then(|v| v.as_str())
-                            .unwrap_or("")
-                            .to_string(),
-                        assigned_to_id: issue.get("assigned_to")
-                            .and_then(|a| a.get("id"))
-                            .and_then(|v| v.as_i64())
-                            .map(|id| id as i32),
-                        assigned_to_name: issue.get("assigned_to")
-                            .and_then(|a| a.get("name"))
-                            .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
-                        created_on: issue.get("created_on")
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                            .map(|dt| dt.with_timezone(&chrono::Utc))
-                            .unwrap_or(now),
-                        updated_on: issue.get("updated_on")
-                            .and_then(|v| v.as_str())
-                            .and_then(|s| chrono::DateTime::parse_from_rfc3339(s).ok())
-                            .map(|dt| dt.with_timezone(&chrono::Utc))
-                            .unwrap_or(now),
-                        cached_at: now,
-                    };
-                    
-                    if let Ok(_) = db.cache_issue(&cached_issue) {
-                        cached_count += 1;
-                    }
-                }
-                
-                Ok(format!("Cached {} issues", cached_count))
-            } else {
-                Ok("No issues to cache".to_string())
-            }
-        } else {
-            Err("Database not initialized".to_string())
-        }
-    } else {
-        Err("Redmine client not configured".to_string())
     }
 }
 
@@ -722,35 +591,52 @@ pub fn run() {
         db: Arc::new(Mutex::new(None)),
     }));
     
+    // Initialize m3u8 parser
+    let parser_handle = M3u8ParserHandle {
+        parser: Arc::new(m3u8_parser::M3u8Parser::new()),
+    };
+    
+    // Initialize FFmpeg wrapper with default config
+    let ffmpeg_config = ffmpeg_wrapper::FFmpegConfig::default();
+    let ffmpeg_handle = Arc::new(Mutex::new(FFmpegHandle {
+        wrapper: Arc::new(Mutex::new(ffmpeg_wrapper::FFmpegWrapper::new(ffmpeg_config))),
+    }));
+    
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(server_handle)
         .manage(database_handle)
+        .manage(parser_handle)
+        .manage(ffmpeg_handle)
         .invoke_handler(tauri::generate_handler![
             greet,
+            // MCP Server
             start_mcp_server,
             stop_mcp_server,
             get_mcp_server_status,
             check_port_availability,
-            configure_redmine,
-            load_redmine_config,
-            test_redmine_connection,
-            list_redmine_issues,
-            get_redmine_issue,
-            create_redmine_issue,
-            update_redmine_issue,
-            list_redmine_projects,
-            get_redmine_project,
-            // Database commands
+            // m3u8 URL management
+            set_current_m3u8_url,
+            get_current_m3u8_url,
+            get_last_used_url,
+            get_url_history,
+            clear_url_history,
+            // m3u8 operations
+            parse_m3u8_url,
+            extract_m3u8_segments,
+            check_ffmpeg_installation,
+            download_m3u8_stream,
+            cancel_download,
+            convert_to_hls,
+            probe_stream,
+            // Configuration
+            save_m3u8_config,
+            load_m3u8_config,
+            // Database
             init_database,
             get_cache_stats,
-            get_cached_issues,
-            get_cached_projects,
-            clear_cache,
-            clear_old_cache,
-            cache_redmine_issues,
-            download_all_issues,
-            search_cached_issues
+            clear_cache
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

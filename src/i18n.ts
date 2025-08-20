@@ -1,161 +1,231 @@
 export const translations = {
   en: {
-    title: "CDP-MCP Server Control",
-    connectWith: "Connect with your preferred client:",
-    claudeCode: "Claude Code:",
-    claudeDesktop: "Claude Desktop (add to mcpServers in claude_desktop_config.json):",
-    vsCode: "VS Code:",
-    port: "Port:",
-    portError: "Please enter a valid port number",
-    portNotAllowed: "Port 0 is not allowed",
-    portRange: "Port must be between 1024 and 65535",
-    checking: "Checking...",
-    inUse: "❌ In use",
-    available: "✅ Available",
-    startServer: "Start MCP Server",
-    stopServer: "Stop MCP Server",
-    status: "Status:",
-    running: "🟢 Running on port",
-    stopped: "⭕ Stopped",
-    copy: "Copy",
-    copied: "✓ Copied",
-    error: "Error:",
-    selectTools: "Select Tools to Enable:",
-    enabledTools: "Enabled Tools:",
-    menu: "Menu",
-    toolCategories: {
-      issues: "Issues",
-      projects: "Projects",
-      users: "Users",
-      timeEntries: "Time Entries"
+    // App title
+    title: "m3u8 MCP Server",
+    
+    // Menu
+    menu: {
+      settings: "Settings",
+      ffmpegConfig: "FFmpeg Configuration", 
+      mcpServerControl: "MCP Server Control",
+      cacheStats: "Cache Statistics",
     },
-    tools: {
-      redmine_list_issues: "List Issues",
-      redmine_get_issue: "Get Issue",
-      redmine_create_issue: "Create Issue",
-      redmine_update_issue: "Update Issue",
-      redmine_delete_issue: "Delete Issue",
-      redmine_list_projects: "List Projects",
-      redmine_get_project: "Get Project",
-      redmine_create_project: "Create Project",
-      redmine_list_users: "List Users",
-      redmine_get_current_user: "Get Current User",
-      redmine_list_time_entries: "List Time Entries",
-      redmine_create_time_entry: "Create Time Entry",
-      redmine_download_all_issues: "Download All Issues",
-      redmine_search_cached_issues: "Search Cached Issues",
-      redmine_get_cache_stats: "Get Cache Statistics",
-      redmine_clear_cache: "Clear Cache"
+    
+    // M3u8 Form
+    m3u8Form: {
+      title: "m3u8 Stream Parser",
+      urlLabel: "m3u8 URL",
+      urlPlaceholder: "https://example.com/stream.m3u8",
+      parseButton: "Parse Playlist",
+      downloadButton: "Download Stream",
+      parsing: "Parsing...",
+      processing: "Processing...",
+      clearUrl: "Clear URL",
+      urlHistory: "URL History",
+      recentUrls: "Recent URLs",
+      clearAll: "Clear All",
+      noUrlError: "Please enter a valid m3u8 URL",
+      parsedPlaylist: "Parsed Playlist",
+      version: "Version",
+      targetDuration: "Target Duration",
+      variants: "Variants",
+      bandwidth: "Bandwidth",
+      resolution: "Resolution",
+      codecs: "Codecs",
+      segments: "Segments",
+      duration: "Duration",
+      segmentsTotal: "total",
+      andMore: "and {count} more segments",
+      master: "Master",
+      media: "Media",
+      downloadCompleted: "Download completed",
+      downloadCancelled: "Download cancelled",
+      initializingDownload: "Initializing download...",
+      cancellingDownload: "Cancelling download...",
+      extractSegmentsButton: "Extract Segments",
+      extracting: "Extracting...",
+      extractedSegments: "Extracted Segments",
+      copyUrl: "Copy URL",
+      copyAllUrls: "Copy All URLs",
+      clearSegments: "Clear",
+      showLess: "Show Less",
+      disclaimer: "Content Download Disclaimer",
+      disclaimerText: "By using this download feature, you acknowledge that:\n• You are responsible for ensuring you have proper rights and permissions to download the content\n• You will comply with all applicable copyright laws and terms of service\n• This tool is provided for legitimate use cases only (personal backups, content you own, etc.)\n• The developers are not responsible for any misuse of this tool",
+      iUnderstand: "I understand and agree",
+      cancel: "Cancel",
+      selectDownloadFolder: "Select Download Folder",
     },
-    selectAll: "Select All",
-    deselectAll: "Deselect All",
+    
+    // MCP Server Control
+    mcpServer: {
+      title: "MCP Server Control",
+      ffmpegConfig: "FFmpeg Configuration",
+      ffmpegPath: "FFmpeg Path",
+      connectWith: "Connect with:",
+      claudeCode: "Claude Code",
+      claudeDesktop: "Claude Desktop",
+      vsCode: "VS Code Extension",
+      port: "Port:",
+      portError: "Please enter a valid port (1024-65535)",
+      startServer: "Connect to AI via MCP",
+      stopServer: "Disconnect from AI",
+      status: "Status:",
+      running: "Running on port",
+      stopped: "Stopped",
+      copy: "Copy",
+      copied: "Copied!",
+      error: "Error:",
+      saveConfig: "Configuration saved",
+    },
+    
+    // Cache Statistics Modal
     cache: {
-      title: "Local Cache",
-      stats: "Cache Statistics",
-      issues: "Issues",
-      projects: "Projects",
-      users: "Users",
-      timeEntries: "Time Entries",
-      total: "Total Items",
-      refresh: "Refresh Stats",
-      viewStats: "View Statistics",
-      viewCached: "View Cached Data",
-      clearCache: "Clear All Cache",
+      title: "Cache Statistics",
+      cachedPlaylists: "Cached Playlists",
+      downloadedStreams: "Downloaded Streams",
+      probeResults: "Probe Results",
+      totalDownloadSize: "Total Download Size",
+      latestDownload: "Latest download",
+      latestCache: "Latest cache",
+      refresh: "Refresh",
       close: "Close",
-      clearOldCache: "Clear Old Cache",
-      days: "days",
-      cacheSuccess: "Data cached successfully",
-      cacheError: "Failed to cache data",
+      databaseNotInitialized: "Database not initialized",
       clearSuccess: "Cache cleared successfully",
       clearError: "Failed to clear cache",
-      initDatabase: "Initialize Database",
-      databaseInitialized: "Database initialized",
-      databaseError: "Database error",
-      downloadAll: "Download All Issues",
-      downloading: "Downloading...",
-      downloadSuccess: "Downloaded all issues",
-      search: "Search",
-      searchPlaceholder: "Search issues...",
-      searchResults: "Search Results",
-      noResults: "No results found",
-      showingResults: "Showing results"
     },
   },
   ja: {
-    title: "CDP-MCP サーバー管理",
-    connectWith: "お好みのクライアントで接続してください：",
-    claudeCode: "Claude Code:",
-    claudeDesktop: "Claude Desktop (claude_desktop_config.jsonのmcpServersに追加):",
-    vsCode: "VS Code:",
-    port: "ポート:",
-    portError: "有効なポート番号を入力してください",
-    portNotAllowed: "ポート0は使用できません",
-    portRange: "ポートは1024から65535の間である必要があります",
-    checking: "確認中...",
-    inUse: "❌ 使用中",
-    available: "✅ 利用可能",
-    startServer: "MCPサーバーを起動",
-    stopServer: "MCPサーバーを停止",
-    status: "ステータス:",
-    running: "🟢 ポートで実行中",
-    stopped: "⭕ 停止中",
-    copy: "コピー",
-    copied: "✓ コピー済み",
-    error: "エラー:",
-    selectTools: "有効にするツールを選択:",
-    enabledTools: "有効なツール:",
-    menu: "メニュー",
-    toolCategories: {
-      issues: "イシュー",
-      projects: "プロジェクト",
-      users: "ユーザー",
-      timeEntries: "タイムエントリー"
+    // App title
+    title: "m3u8 MCP サーバー",
+    
+    // Menu
+    menu: {
+      settings: "設定",
+      ffmpegConfig: "FFmpeg 設定",
+      mcpServerControl: "MCP サーバー制御", 
+      cacheStats: "キャッシュ統計",
     },
-    tools: {
-      redmine_list_issues: "イシュー一覧",
-      redmine_get_issue: "イシュー取得",
-      redmine_create_issue: "イシュー作成",
-      redmine_update_issue: "イシュー更新",
-      redmine_delete_issue: "イシュー削除",
-      redmine_list_projects: "プロジェクト一覧",
-      redmine_get_project: "プロジェクト取得",
-      redmine_create_project: "プロジェクト作成",
-      redmine_list_users: "ユーザー一覧",
-      redmine_get_current_user: "現在のユーザー取得",
-      redmine_list_time_entries: "タイムエントリー一覧",
-      redmine_create_time_entry: "タイムエントリー作成",
-      redmine_download_all_issues: "全イシューダウンロード",
-      redmine_search_cached_issues: "キャッシュ検索",
-      redmine_get_cache_stats: "キャッシュ統計",
-      redmine_clear_cache: "キャッシュクリア"
+    
+    // M3u8 Form
+    m3u8Form: {
+      title: "m3u8 ストリームパーサー",
+      urlLabel: "m3u8 URL",
+      urlPlaceholder: "https://example.com/stream.m3u8",
+      parseButton: "プレイリストを解析",
+      downloadButton: "ストリームをダウンロード",
+      parsing: "解析中...",
+      processing: "処理中...",
+      clearUrl: "URLをクリア",
+      urlHistory: "URL履歴",
+      recentUrls: "最近のURL",
+      clearAll: "すべてクリア",
+      noUrlError: "有効なm3u8 URLを入力してください",
+      parsedPlaylist: "解析済みプレイリスト",
+      version: "バージョン",
+      targetDuration: "ターゲット時間",
+      variants: "バリアント",
+      bandwidth: "帯域幅",
+      resolution: "解像度",
+      codecs: "コーデック",
+      segments: "セグメント",
+      duration: "時間",
+      segmentsTotal: "合計",
+      andMore: "他 {count} セグメント",
+      master: "マスター",
+      media: "メディア",
+      downloadCompleted: "ダウンロード完了",
+      downloadCancelled: "ダウンロードをキャンセルしました",
+      initializingDownload: "ダウンロードを初期化しています...",
+      cancellingDownload: "ダウンロードをキャンセル中...",
+      extractSegmentsButton: "セグメント抽出",
+      extracting: "抽出中...",
+      extractedSegments: "抽出されたセグメント",
+      copyUrl: "URLをコピー",
+      copyAllUrls: "すべてのURLをコピー",
+      clearSegments: "クリア",
+      showLess: "折りたたむ",
+      disclaimer: "コンテンツダウンロードに関する免責事項",
+      disclaimerText: "このダウンロード機能を使用することで、以下に同意したものとみなされます：\n• コンテンツをダウンロードする適切な権限と許可を持っていることを確認する責任があります\n• すべての適用される著作権法およびサービス利用規約を遵守します\n• このツールは正当な用途（個人的なバックアップ、所有するコンテンツなど）にのみ使用されます\n• 開発者はこのツールの誤用について一切の責任を負いません",
+      iUnderstand: "理解し、同意します",
+      cancel: "キャンセル",
+      selectDownloadFolder: "ダウンロード先フォルダを選択",
     },
-    selectAll: "すべて選択",
-    deselectAll: "すべて解除",
+    
+    // MCP Server Control
+    mcpServer: {
+      title: "MCP サーバー制御",
+      ffmpegConfig: "FFmpeg 設定",
+      ffmpegPath: "FFmpeg パス",
+      connectWith: "接続方法:",
+      claudeCode: "Claude Code",
+      claudeDesktop: "Claude Desktop",
+      vsCode: "VS Code 拡張機能",
+      port: "ポート:",
+      portError: "有効なポート番号を入力してください (1024-65535)",
+      startServer: "MCPでAIに接続",
+      stopServer: "AIから切断",
+      status: "ステータス:",
+      running: "ポートで実行中",
+      stopped: "停止中",
+      copy: "コピー",
+      copied: "コピーしました!",
+      error: "エラー:",
+      saveConfig: "設定を保存しました",
+    },
+    
+    // Cache Statistics Modal
     cache: {
-      title: "ローカルキャッシュ",
-      stats: "キャッシュ統計",
-      issues: "イシュー",
-      projects: "プロジェクト",
-      users: "ユーザー",
-      timeEntries: "タイムエントリー",
-      total: "合計アイテム",
-      refresh: "統計を更新",
-      viewStats: "統計を表示",
-      viewCached: "キャッシュデータを表示",
-      clearCache: "全キャッシュをクリア",
+      title: "キャッシュ統計",
+      cachedPlaylists: "キャッシュ済みプレイリスト",
+      downloadedStreams: "ダウンロード済みストリーム",
+      probeResults: "プローブ結果",
+      totalDownloadSize: "合計ダウンロードサイズ",
+      latestDownload: "最新のダウンロード",
+      latestCache: "最新のキャッシュ",
+      refresh: "更新",
       close: "閉じる",
-      clearOldCache: "古いキャッシュをクリア",
-      days: "日",
-      cacheSuccess: "データを正常にキャッシュしました",
-      cacheError: "データのキャッシュに失敗しました",
+      databaseNotInitialized: "データベースが初期化されていません",
       clearSuccess: "キャッシュを正常にクリアしました",
       clearError: "キャッシュのクリアに失敗しました",
-      initDatabase: "データベースを初期化",
-      databaseInitialized: "データベースが初期化されました",
-      databaseError: "データベースエラー"
     },
   },
 } as const;
 
 export type Language = keyof typeof translations;
 export type TranslationKey = keyof typeof translations.en;
+
+// Helper function to get translation
+export function t(language: Language, path: string): string {
+  const keys = path.split('.');
+  let value: any = translations[language];
+  
+  for (const key of keys) {
+    if (value && typeof value === 'object' && key in value) {
+      value = value[key];
+    } else {
+      // Fallback to English if translation not found
+      value = translations.en;
+      for (const k of keys) {
+        if (value && typeof value === 'object' && k in value) {
+          value = value[k];
+        } else {
+          return path; // Return the path if translation not found
+        }
+      }
+      break;
+    }
+  }
+  
+  return typeof value === 'string' ? value : path;
+}
+
+// Helper function for template strings with placeholders
+export function tWithParams(language: Language, path: string, params: Record<string, any>): string {
+  let text = t(language, path);
+  
+  Object.entries(params).forEach(([key, value]) => {
+    text = text.replace(`{${key}}`, String(value));
+  });
+  
+  return text;
+}

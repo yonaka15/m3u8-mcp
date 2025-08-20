@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "redmine-mcp",
+  "productName": "m3u8-mcp",
   "version": "0.1.0",
-  "identifier": "com.redmine.mcp",
+  "identifier": "com.m3u8.mcp",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1422",
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Redmine-MCP",
+        "title": "m3u8-MCP",
         "width": 900,
         "height": 900,
         "minWidth": 600,
