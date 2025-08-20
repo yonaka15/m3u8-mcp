@@ -465,40 +465,60 @@ function App() {
                   />
                 </div>
 
-                <div className="flex items-center gap-4 mb-6">
-                  <button
-                    onClick={toggleMcpServer}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      mcpServerRunning
-                        ? "bg-red-500 hover:bg-red-600 text-white"
-                        : "bg-green-500 hover:bg-green-600 text-white"
-                    }`}
-                  >
-                    {mcpServerRunning ? t(language, 'mcpServer.stopServer') : t(language, 'mcpServer.startServer')}
-                  </button>
-                  <span
-                    className={`font-medium ${
-                      mcpServerRunning ? "text-green-600 dark:text-green-400" : "text-gray-500"
-                    }`}
-                  >
-                    {t(language, 'mcpServer.status')} {mcpServerRunning ? `${t(language, 'mcpServer.running')} ${currentPort}` : t(language, 'mcpServer.stopped')}
-                  </span>
-                </div>
+                {!mcpServerRunning && (
+                  <div className="flex items-center gap-4 mb-6">
+                    <button
+                      onClick={toggleMcpServer}
+                      className="px-4 py-2 rounded-lg font-medium transition-colors bg-green-500 hover:bg-green-600 text-white"
+                    >
+                      {t(language, 'mcpServer.startServer')}
+                    </button>
+                    <span className="font-medium text-gray-500">
+                      {t(language, 'mcpServer.status')} {t(language, 'mcpServer.stopped')}
+                    </span>
+                  </div>
+                )}
+
+                {mcpServerRunning && (
+                  <>
+                    <div className="mb-6">
+                      <span className={`font-medium text-green-600 dark:text-green-400`}>
+                        {t(language, 'mcpServer.status')} {t(language, 'mcpServer.running')} {currentPort}
+                      </span>
+                    </div>
+                    <div className="flex justify-between gap-3">
+                      <button
+                        onClick={() => setMcpServerModalOpen(false)}
+                        className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors"
+                      >
+                        Close
+                      </button>
+                      <button
+                        onClick={toggleMcpServer}
+                        className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg font-medium transition-colors"
+                      >
+                        {t(language, 'mcpServer.stopServer')}
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {!mcpServerRunning && (
+                  <div className="flex justify-end gap-3">
+                    <button
+                      onClick={() => setMcpServerModalOpen(false)}
+                      className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors"
+                    >
+                      Close
+                    </button>
+                  </div>
+                )}
 
                 {mcpServerMessage && (
-                  <p className="mb-4 text-sm text-red-600 dark:text-red-400">
+                  <p className="mt-4 text-sm text-red-600 dark:text-red-400">
                     {mcpServerMessage}
                   </p>
                 )}
-                
-                <div className="flex justify-end gap-3">
-                  <button
-                    onClick={() => setMcpServerModalOpen(false)}
-                    className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-300 rounded-lg font-medium transition-colors"
-                  >
-                    Close
-                  </button>
-                </div>
               </div>
             </div>
           </div>
