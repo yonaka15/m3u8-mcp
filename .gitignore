@@ -98,6 +98,10 @@ pnpm-lock.yaml
 *.temp
 .cache/
 
+# Application cache and config
+url_history.json
+config.json
+
 # IDE specific
 *.iml
 .project
